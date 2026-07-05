@@ -88,7 +88,46 @@ function reveal7d(rem, timeLeftSec, windowSec, opt) {
   return false;
 }
 
+// ---- tooltip (hover) ------------------------------------------------------
+// VS Code kills an open status-bar hover whenever the tooltip STRING changes
+// (vscode#128887: a mid-hover update dismisses the tooltip until you re-hover).
+// So the tooltip must be a STABLE function of the quota state: absolute reset
+// times rounded to the minute, and no live countdown ("in 1h23m") — countdowns
+// churn every refresh and made the hover flash and vanish.
+
+function resetClock(resetSec, nowMs) {
+  if (resetSec == null) return null;
+  const epoch = nowMs + resetSec * 1000;
+  return new Date(Math.round(epoch / 60000) * 60000); // minute-rounded: absorbs API jitter
+}
+
+// 5h reset: "4:59 PM"
+function clockShort(resetSec, nowMs) {
+  if (resetSec != null && resetSec <= 0) return "soon"; // elapsed: constant, never now-anchored
+  const d = resetClock(resetSec, nowMs);
+  if (!d) return "unknown";
+  return d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+}
+
+// 7d reset: "Thu 3:00 PM"
+function clockLong(resetSec, nowMs) {
+  if (resetSec != null && resetSec <= 0) return "soon"; // elapsed: constant, never now-anchored
+  const d = resetClock(resetSec, nowMs);
+  if (!d) return "unknown";
+  return d
+    .toLocaleString(undefined, { weekday: "short", hour: "numeric", minute: "2-digit" })
+    .replace(",", "");
+}
+
+function tooltipFor(name, five, seven, nowMs) {
+  return (
+    `${name}\n` +
+    `⏱ 5h: ${five.rem == null ? "—" : five.rem + "% left"} · resets ${clockShort(five.reset, nowMs)}\n` +
+    `🗓 Weekly resets ${clockLong(seven.reset, nowMs)} (${seven.rem == null ? "—" : seven.rem + "% left"})`
+  );
+}
+
 module.exports = {
   fmtShort, fmtLong, parseUtil, parseResetHeader, accountFromJwt,
-  dotFor, paceLine, reveal5h, reveal7d,
+  dotFor, paceLine, reveal5h, reveal7d, tooltipFor,
 };

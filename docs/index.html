@@ -159,7 +159,7 @@ function providerHTML(name,h5,h5t,h7,h7t){
   const parts=[`${dotFor(worst)} ${name}`];
   if(r5.show) parts.push(`${CLOCK} ${col(h5,R(h5)+'%')} <span class="sub">(${hrStr(h5t)})</span>`);
   if(r7.show) parts.push(`${CAL} ${col(h7,R(h7)+'%')} <span class="sub">(${dStr(h7t)})</span>`);
-  const tip=`${name}\n⏱ 5h: ${R(h5)}% left · resets ${clk(h5t)} (in ${hrStr(h5t)})\n🗓 Weekly resets ${clk(h7t*24)} (${R(h7)}% left)`;
+  const tip=`${name}\n⏱ 5h: ${R(h5)}% left · resets ${clk(h5t)}\n🗓 Weekly resets ${clk(h7t*24)} (${R(h7)}% left)`;
   return {html:`<span class="sbitem" title="${tip}">${parts.join('&nbsp;&nbsp;')}</span>`, r5, r7};
 }
 

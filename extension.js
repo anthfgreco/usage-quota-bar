@@ -44,19 +44,8 @@ function colorFor(rem) {
   return new vscode.ThemeColor("charts.green");
 }
 
-// exact wall-clock strings for the tooltip
-function clock5(sec) {
-  if (sec == null) return "unknown";
-  return new Date(Date.now() + sec * 1000).toLocaleTimeString(undefined, {
-    hour: "numeric", minute: "2-digit",
-  });
-}
-function clock7(sec) {
-  if (sec == null) return "unknown";
-  return new Date(Date.now() + sec * 1000)
-    .toLocaleString(undefined, { weekday: "short", hour: "numeric", minute: "2-digit" })
-    .replace(",", "");
-}
+// tooltip is built by L.tooltipFor — it must stay byte-stable across refreshes
+// (VS Code dismisses an open hover whenever the tooltip string changes, vscode#128887).
 
 // ---- credential readers --------------------------------------------------
 const CLAUDE_FILE = () => path.join(os.homedir(), ".claude", ".credentials.json");
@@ -272,10 +261,7 @@ function renderProvider(it, name, d, fiveFloor) {
   }
   it.text = parts.join("  "); // two spaces between windows; icons self-segment
   it.color = colorFor(worst === 101 ? null : worst);
-  it.tooltip =
-    `${name}\n` +
-    `⏱ 5h: ${f.rem == null ? "—" : f.rem + "% left"} · resets ${clock5(f.reset)} (in ${L.fmtShort(f.reset)})\n` +
-    `🗓 Weekly resets ${clock7(s.reset)} (${s.rem == null ? "—" : s.rem + "% left"})`;
+  it.tooltip = L.tooltipFor(name, f, s, Date.now());
 }
 
 async function refresh() {

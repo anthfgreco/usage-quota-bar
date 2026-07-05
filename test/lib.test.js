@@ -45,5 +45,33 @@ eq("7d too-fast", L.reveal7d(40, 5 * 86400, 604800, o7), true);
 eq("7d surplus", L.reveal7d(88, 1.5 * 86400, 604800, o7), true);
 eq("7d scarce", L.reveal7d(20, 6 * 86400, 604800, o7), true);
 
+// tooltip stability — VS Code kills an open status-bar hover whenever the tooltip
+// STRING changes (vscode#128887), so the tooltip must be byte-identical across refresh
+// ticks when the quota hasn't changed. Countdown text ("in 1h23m") and un-rounded
+// clock times violate this: they churn every cycle and make the hover flash/vanish.
+const T0 = 1700000000000;
+const tipA = L.tooltipFor("Claude", { rem: 78, reset: 5000 }, { rem: 74, reset: 400000 }, T0);
+// one refresh tick later: now +60s, resets ~60s lower with ±2-3s of API jitter
+const tipB = L.tooltipFor("Claude", { rem: 78, reset: 5000 - 62 }, { rem: 74, reset: 400000 - 57 }, T0 + 60000);
+eq("tooltip identical across tick (same quota)", tipA, tipB);
+eq("tooltip has no countdown churn", tipA.includes("(in "), false);
+eq("tooltip changes when quota changes",
+  L.tooltipFor("Claude", { rem: 77, reset: 5000 }, { rem: 74, reset: 400000 }, T0) === tipA, false);
+const tipNull = L.tooltipFor("Codex", { rem: null, reset: null }, { rem: null, reset: null }, T0);
+eq("tooltip null rem shows dash", tipNull.includes("—"), true);
+eq("tooltip null reset shows unknown", tipNull.includes("unknown"), true);
+
+// elapsed resets (0, negative, or stale-past epochs clamped to 0) must render a
+// CONSTANT string — anchoring them to "now" makes the tooltip advance one minute
+// per refresh tick, re-triggering the flashing-hover bug while the API serves a
+// stale window.
+const el1 = L.tooltipFor("Claude", { rem: 78, reset: 0 }, { rem: 74, reset: 0 }, T0);
+const el2 = L.tooltipFor("Claude", { rem: 78, reset: 0 }, { rem: 74, reset: 0 }, T0 + 60000);
+eq("tooltip stable when reset elapsed (0)", el1, el2);
+const ng1 = L.tooltipFor("Codex", { rem: 50, reset: -300 }, { rem: 60, reset: -300 }, T0);
+const ng2 = L.tooltipFor("Codex", { rem: 50, reset: -300 }, { rem: 60, reset: -300 }, T0 + 60000);
+eq("tooltip stable when reset elapsed (negative)", ng1, ng2);
+eq("elapsed reset renders 'soon'", el1.includes("resets soon"), true);
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);
