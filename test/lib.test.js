@@ -73,5 +73,78 @@ const ng2 = L.tooltipFor("Codex", { rem: 50, reset: -300 }, { rem: 60, reset: -3
 eq("tooltip stable when reset elapsed (negative)", ng1, ng2);
 eq("elapsed reset renders 'soon'", el1.includes("resets soon"), true);
 
+// tooltip rewrite gating — byte-stability (above) is necessary but NOT sufficient:
+// VS Code (verified in 1.117.0 statusbarItem.ts + updatableHoverWidget.ts) disposes an
+// open hover whenever the tooltip STRING changes, and a provider under active use has
+// GENUINE data churn (Codex used_percent ticks ~1%/min), so an always-fresh tooltip
+// still kills the hover every refresh. Fix: commit a new tooltip string only on a
+// MATERIAL change — reset clock rolled to a new window, error state flipped, or rem
+// drifted >= driftPct from what the shown tooltip already says. nextTooltip(prev, name,
+// d, nowMs) returns {tooltip, snap} to commit, or null to leave the shown string alone.
+eq("nextTooltip exported", typeof L.nextTooltip, "function");
+const D = (r5, s5, r7, s7) => ({ five: { rem: r5, reset: s5 }, seven: { rem: r7, reset: s7 } });
+
+// first render always commits, with the same string tooltipFor builds
+const g1 = L.nextTooltip(null, "Codex", D(12, 1778, 86, 588578), T0);
+eq("first render commits", g1 !== null, true);
+eq("first render tooltip matches tooltipFor", g1.tooltip,
+  L.tooltipFor("Codex", { rem: 12, reset: 1778 }, { rem: 86, reset: 588578 }, T0));
+
+// THE Codex bug: one tick later rem drifts 1% (12->11), resets ~60s lower -> no rewrite
+eq("1% drift does not rewrite", L.nextTooltip(g1.snap, "Codex", D(11, 1712, 86, 588512), T0 + 65000), null);
+
+// drift just under threshold (12 -> 8) -> still no rewrite
+eq("4% drift does not rewrite", L.nextTooltip(g1.snap, "Codex", D(8, 1500, 86, 588300), T0 + 300000), null);
+
+// drift at threshold (12 -> 7) -> rewrite, and the tooltip shows the fresh value
+const g2 = L.nextTooltip(g1.snap, "Codex", D(7, 1400, 86, 588200), T0 + 360000);
+eq("5% drift rewrites", g2 !== null, true);
+eq("rewrite shows fresh rem", g2.tooltip.includes("7% left"), true);
+
+// 7d drift gates independently
+eq("7d 5% drift rewrites",
+  L.nextTooltip(g1.snap, "Codex", D(12, 1700, 81, 588500), T0 + 65000) !== null, true);
+
+// new 5h window: reset jumps forward -> clock changes -> rewrite even with rem stable
+eq("new window rewrites",
+  L.nextTooltip(g1.snap, "Codex", D(12, 1778 + 7200, 86, 588578), T0) !== null, true);
+
+// null<->number rem shape change -> rewrite
+eq("rem null->number rewrites",
+  L.nextTooltip(g1.snap, "Codex", D(null, 1778, 86, 588578), T0) !== null, true);
+
+// error transitions: appear -> rewrite (error text), persist -> frozen, clear -> rewrite
+const gE = L.nextTooltip(g1.snap, "Codex", { error: "no quota headers (HTTP 500)" }, T0);
+eq("error appearing rewrites", gE !== null, true);
+eq("error tooltip text", gE.tooltip, "Codex: no quota headers (HTTP 500)");
+eq("same error does not rewrite",
+  L.nextTooltip(gE.snap, "Codex", { error: "no quota headers (HTTP 500)" }, T0 + 65000), null);
+eq("error clearing rewrites",
+  L.nextTooltip(gE.snap, "Codex", D(12, 1778, 86, 588578), T0 + 130000) !== null, true);
+
+// rounding-boundary wobble — if a window's true reset epoch sits within jitter range
+// of an exact :30s-in-minute boundary, minute-rounding flips the rendered clock
+// between adjacent minutes on every tick. Comparing rendered clock strings therefore
+// reintroduces per-tick rewrites (hover death) for that whole window. The gate must
+// compare minute-rounded reset EPOCHS with ±1 min tolerance instead.
+// T0 % 60000 == 20000, so reset=970s puts the reset epoch exactly at :30.000.
+const gW = L.nextTooltip(null, "Codex", D(12, 970, 86, 588578), T0);
+// next tick renders 200ms early: epoch reconstructs to :29.800 -> rounds to the LOWER
+// minute. A string-comparing gate sees a "clock change" and rewrites; it must not.
+eq("±1min rounding wobble does not rewrite (5h)",
+  L.nextTooltip(gW.snap, "Codex", D(12, 905, 86, 588513), T0 + 64800), null);
+// and the same wobble on the 7d window (reset epoch at :30.000 too: 588550s from T0)
+const gW7 = L.nextTooltip(null, "Codex", D(12, 1778, 86, 588550), T0);
+eq("±1min rounding wobble does not rewrite (7d)",
+  L.nextTooltip(gW7.snap, "Codex", D(12, 1713, 86, 588485), T0 + 64800), null);
+// genuine movement is still material: a 2-minute shift of the same window rewrites
+eq("2min reset shift rewrites",
+  L.nextTooltip(gW.snap, "Codex", D(12, 970 + 120, 86, 588578), T0) !== null, true);
+// zero-crossing to elapsed ("soon") is material exactly once, then frozen
+const gZ = L.nextTooltip(gW.snap, "Codex", D(12, 0, 86, 588578 - 970), T0 + 970000);
+eq("reset elapsing rewrites once", gZ !== null, true);
+eq("elapsed stays frozen",
+  L.nextTooltip(gZ.snap, "Codex", D(12, -60, 86, 588578 - 1030), T0 + 1030000), null);
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

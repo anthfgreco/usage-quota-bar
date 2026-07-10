@@ -127,7 +127,66 @@ function tooltipFor(name, five, seven, nowMs) {
   );
 }
 
+// Byte-stability above is necessary but not sufficient: VS Code (1.117.0
+// statusbarItem.ts -> updatableHoverWidget.ts) DISPOSES an open hover whenever the
+// tooltip string changes, and a provider under active use has genuine data churn
+// (measured: Codex used_percent ticks ~1%/min), so even a jitter-proof tooltip is
+// rewritten every refresh and the hover still dies mid-read. Gate rewrites on
+// MATERIAL change only: reset clock rolled to a new window, error state flipped,
+// or rem drifted >= driftPct from what the shown tooltip already says. Between
+// commits the shown string is frozen (worst case ~driftPct-1 points stale), so an
+// idle provider's hover lives forever and an active one survives ~5 min of ticks.
+
+function remDelta(a, b) {
+  if (a == null && b == null) return 0;
+  if (a == null || b == null) return Infinity; // shape change ("—" <-> "N%") is material
+  return Math.abs(a - b);
+}
+
+// Reset-time change detection uses minute-rounded EPOCHS, not rendered clock strings:
+// when the true reset epoch sits within jitter range of an exact :30s-in-minute
+// boundary, minute-rounding flips the rendered clock between adjacent minutes on
+// every tick — a string compare would rewrite (and kill the hover) all window long.
+// ±1 minute of movement is rounding wobble; >=2 is a real shift (rollovers jump hours).
+function resetEpochMin(resetSec, nowMs) {
+  if (resetSec == null) return "unknown";
+  if (resetSec <= 0) return "soon"; // elapsed sentinel, matches clockShort/clockLong
+  return Math.round((nowMs + resetSec * 1000) / 60000);
+}
+
+function resetMoved(a, b) {
+  if (typeof a !== typeof b) return true; // minute <-> "soon"/"unknown"
+  if (typeof a === "string") return a !== b; // sentinel change
+  return Math.abs(a - b) >= 2; // tolerate ±1 min rounding wobble
+}
+
+// prev: the snapshot committed with the currently-shown tooltip (null on first render).
+// d: fetcher result — { error } or { five, seven }. Returns { tooltip, snap } to
+// commit, or null to leave the shown string (and any open hover) untouched.
+function nextTooltip(prev, name, d, nowMs, driftPct = 5) {
+  const snap = d.error
+    ? { error: String(d.error) }
+    : {
+        error: null,
+        rem5: d.five.rem, rem7: d.seven.rem,
+        m5: resetEpochMin(d.five.reset, nowMs), m7: resetEpochMin(d.seven.reset, nowMs),
+      };
+  let material;
+  if (!prev) material = true;
+  else if ((prev.error || null) !== (snap.error || null)) material = true;
+  else if (snap.error) material = false; // same error string -> keep frozen
+  else {
+    material =
+      resetMoved(prev.m5, snap.m5) || resetMoved(prev.m7, snap.m7) ||
+      remDelta(prev.rem5, snap.rem5) >= driftPct ||
+      remDelta(prev.rem7, snap.rem7) >= driftPct;
+  }
+  if (!material) return null;
+  const tooltip = d.error ? `${name}: ${d.error}` : tooltipFor(name, d.five, d.seven, nowMs);
+  return { tooltip, snap };
+}
+
 module.exports = {
   fmtShort, fmtLong, parseUtil, parseResetHeader, accountFromJwt,
-  dotFor, paceLine, reveal5h, reveal7d, tooltipFor,
+  dotFor, paceLine, reveal5h, reveal7d, tooltipFor, nextTooltip,
 };

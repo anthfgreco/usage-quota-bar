@@ -44,8 +44,11 @@ function colorFor(rem) {
   return new vscode.ThemeColor("charts.green");
 }
 
-// tooltip is built by L.tooltipFor — it must stay byte-stable across refreshes
-// (VS Code dismisses an open hover whenever the tooltip string changes, vscode#128887).
+// tooltip writes are gated by L.nextTooltip — VS Code disposes an open hover whenever
+// the tooltip string changes (vscode#128887), so the string must be byte-stable across
+// refreshes (L.tooltipFor) AND only rewritten on material quota change (L.nextTooltip):
+// a provider under active use has genuine ~1%/min data churn that would otherwise
+// rewrite (and kill the hover) every tick. text/color updates are hover-safe.
 
 // ---- credential readers --------------------------------------------------
 const CLAUDE_FILE = () => path.join(os.homedir(), ".claude", ".credentials.json");
@@ -242,12 +245,15 @@ async function fetchCodex() {
 
 // ---- status bar (one item per provider) ----------------------------------
 let items = {}; // claude, codex
+const tipSnaps = {}; // per provider: snapshot committed with the shown tooltip (lib.nextTooltip)
 
-function renderProvider(it, name, d, fiveFloor) {
+function renderProvider(it, name, d, fiveFloor, nowMs = Date.now()) {
+  // tooltip first, via the rewrite gate — an unchanged string leaves an open hover alive
+  const t = L.nextTooltip(tipSnaps[name] || null, name, d, nowMs);
+  if (t) { it.tooltip = t.tooltip; tipSnaps[name] = t.snap; }
   if (d.error) {
     it.text = `⚪ ${name} —`;
     it.color = colorFor(null);
-    it.tooltip = `${name}: ${d.error}`;
     return;
   }
   const f = d.five, s = d.seven;
@@ -261,7 +267,6 @@ function renderProvider(it, name, d, fiveFloor) {
   }
   it.text = parts.join("  "); // two spaces between windows; icons self-segment
   it.color = colorFor(worst === 101 ? null : worst);
-  it.tooltip = L.tooltipFor(name, f, s, Date.now());
 }
 
 async function refresh() {
@@ -312,4 +317,4 @@ function deactivate() { if (timer) clearInterval(timer); }
 module.exports = { activate, deactivate };
 // test hooks (VS Code only invokes activate/deactivate; exposing these is harmless and
 // lets the credential/refresh paths be exercised without a VS Code host).
-module.exports._internal = { readClaudeCreds, refreshClaudeToken, fetchClaude, parseClaudeCreds };
+module.exports._internal = { readClaudeCreds, refreshClaudeToken, fetchClaude, parseClaudeCreds, renderProvider };
