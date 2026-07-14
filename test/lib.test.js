@@ -202,6 +202,41 @@ eq("segment on pace bare", L.codexSegment(55, 336960, 604800, 5, null), "55% (3d
 eq("segment cool", L.codexSegment(92, 129600, 604800, 5, 4), "92% (1d) 🧊4");
 eq("segment unknown rem", L.codexSegment(null, null, 604800, 5, null), "— (?)");
 
+// reset-credit details: nearest expiry among available credits only
+const CREDIT_FIXTURE = {
+  credits: [
+    { id: "RateLimitResetCredit_aaa", reset_type: "codex_rate_limits",
+      status: "available", granted_at: "2026-06-18T00:33:46.788614Z",
+      expires_at: "2026-07-18T00:33:46.788614Z",
+      redeem_started_at: null, redeemed_at: null, title: "Full reset", description: "..." },
+    { id: "RateLimitResetCredit_bbb", reset_type: "codex_rate_limits",
+      status: "available", granted_at: "2026-06-27T00:03:01.980864Z",
+      expires_at: "2026-07-27T00:03:01.980864Z",
+      redeem_started_at: null, redeemed_at: null, title: "Full reset", description: "..." },
+  ],
+  available_count: 2,
+  total_earned_count: 0,
+};
+const cd = L.parseCreditsDetail(CREDIT_FIXTURE);
+eq("credits detail count", cd.count, 2);
+eq("credits detail nearest", cd.nearestExpiry, Date.parse("2026-07-18T00:33:46.788614Z"));
+eq("all null expiries have no nearest", L.parseCreditsDetail({
+  credits: [
+    { status: "available", expires_at: null },
+    { status: "available", expires_at: null },
+  ],
+  available_count: 2,
+}).nearestExpiry, null);
+const red = L.parseCreditsDetail({
+  credits: [
+    { status: "redeemed", expires_at: "2026-07-15T00:00:00Z" },
+    { status: "available", expires_at: "2026-07-20T00:00:00Z" },
+  ],
+});
+eq("redeemed credits excluded", red.nearestExpiry, Date.parse("2026-07-20T00:00:00Z"));
+eq("empty credits detail", JSON.stringify(L.parseCreditsDetail({})), JSON.stringify({ count: 0, nearestExpiry: null }));
+eq("malformed credits detail", JSON.stringify(L.parseCreditsDetail(null)), JSON.stringify({ count: 0, nearestExpiry: null }));
+
 // weekly tooltip — shape and stability
 const WD = { weekly: { rem: 78, reset: 508511, win: 604800 },
              spark: { name: "GPT-5.3-Codex-Spark", rem: 100, reset: 604800 }, resets: 4 };
@@ -213,6 +248,13 @@ eq("weekly tooltip pace", wt.includes("🔥 Pace: −6 vs even burn (on-pace 84%
 eq("weekly tooltip resets", wt.includes("↺ Rate-limit resets available: 4"), true);
 eq("weekly tooltip spark", wt.includes("⚡ Spark: 100% left · resets "), true);
 eq("weekly tooltip no calendar icon", wt.includes("🗓"), false);
+const exp = T0 + 3.4 * 86400000;
+const wtExp = L.tooltipForCodexWeekly("Codex", { ...WD, resetsExpiry: exp }, T0, 5);
+eq("weekly tooltip appends nearest expiry",
+  wtExp.includes(`↺ Rate-limit resets available: 4 · nearest expires ${L.fmtDateShort(exp)} (${L.daysUntil(exp, T0)}d)`), true);
+const wtNoExp = L.tooltipForCodexWeekly("Codex", WD, T0, 5);
+eq("weekly tooltip without expiry unchanged", wtNoExp.includes("↺ Rate-limit resets available: 4\n"), true);
+eq("weekly tooltip without expiry has no nearest", wtNoExp.includes("nearest expires"), false);
 // byte-stable across one refresh tick (same quota, ~60s lower reset + API jitter;
 // −58 not −62: keeps the reset epoch inside the same rounded minute — boundary
 // wobble is the gate's job, not the builder's)
@@ -242,6 +284,11 @@ eq("verdict flip rewrites", L.nextTooltipWeekly(gw1.snap, "Codex",
 // credits change is material
 eq("credits change rewrites", L.nextTooltipWeekly(gw1.snap, "Codex",
   { ...WD, resets: 3 }, T0, 5) !== null, true);
+const gwExp = L.nextTooltipWeekly(null, "Codex", { ...WD, resetsExpiry: exp }, T0, 5);
+eq("expiry same-day tick frozen", L.nextTooltipWeekly(gwExp.snap, "Codex",
+  { ...WD, resetsExpiry: exp }, T0 + 60000, 5), null);
+eq("expiry daily tick rewrites", L.nextTooltipWeekly(gwExp.snap, "Codex",
+  { ...WD, resetsExpiry: exp }, T0 + 86400000, 5) !== null, true);
 // spark disappearing is material
 eq("spark vanish rewrites", L.nextTooltipWeekly(gw1.snap, "Codex",
   { ...WD, spark: null }, T0, 5) !== null, true);

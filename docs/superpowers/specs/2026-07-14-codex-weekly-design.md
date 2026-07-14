@@ -110,6 +110,24 @@ Weekly: 78% left · resets Mon 9:12 AM (5d left)
 - docs/index.html demo: Codex side becomes weekly-only (used % + elapsed sliders, pace verdict in the why-panel).
 - Version **1.2.0** → `./build-vsix.sh` → commit, push, GitHub release with notes for existing users.
 
+## Addendum — v1.2.1: nearest reset-credit expiry (approved 2026-07-14)
+
+`GET chatgpt.com/backend-api/wham/rate-limit-reset-credits` (endpoint confirmed
+from the Codex CLI protocol strings + live probe) returns per-credit
+`status`/`granted_at`/`expires_at`. The tooltip resets line gains the nearest
+expiry among available credits:
+
+```
+↺ Rate-limit resets available: 4 · nearest expires Jul 18 (4d)
+```
+
+- New lib helpers: `parseCreditsDetail` (count + nearest expiry, available-only,
+  null-expiry credits never win "nearest"), `fmtDateShort`, `daysUntil` (ceil).
+- Fetch policy: separate endpoint hit only when the count from the main usage
+  call changes, or hourly; failures keep the count-only line.
+- Gate: `expDays` in the weekly snapshot — the daily tick and expiry changes are
+  material (≤1 rewrite/day), same-day refreshes stay frozen.
+
 ## Execution
 
 Each piece implemented by a **Codex GPT-5.5 sub-agent** (codex-build skill);

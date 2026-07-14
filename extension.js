@@ -235,6 +235,31 @@ async function fetchCodex() {
   return L.parseCodexUsage(j, res.status);
 }
 
+// Reset-credit details live on a separate endpoint. Credits change rarely, so
+// don't hit it every 60s refresh: refetch only when the count from the main
+// usage call changes, or hourly as a staleness backstop. Failures keep the
+// count-only tooltip line (cache marked fresh so we don't hammer a broken
+// endpoint every tick).
+let creditsCache = { key: null, at: 0, nearestExpiry: null };
+async function fetchCodexCreditsExpiry(count) {
+  if (creditsCache.key === count && Date.now() - creditsCache.at < 3600e3)
+    return creditsCache.nearestExpiry;
+  creditsCache = { key: count, at: Date.now(), nearestExpiry: creditsCache.nearestExpiry };
+  try {
+    const auth = readCodexAuth();
+    if (!auth || !auth.access) return creditsCache.nearestExpiry;
+    const headers = { authorization: `Bearer ${auth.access}` };
+    if (auth.account) headers["chatgpt-account-id"] = auth.account;
+    const res = await request({
+      method: "GET", hostname: "chatgpt.com",
+      path: "/backend-api/wham/rate-limit-reset-credits", headers,
+    });
+    const det = L.parseCreditsDetail(JSON.parse(res.body));
+    creditsCache.nearestExpiry = det.nearestExpiry;
+  } catch (_) {}
+  return creditsCache.nearestExpiry;
+}
+
 // ---- status bar (one item per provider) ----------------------------------
 let items = {}; // claude, codex
 const tipSnaps = {}; // per provider: snapshot committed with the shown tooltip (lib.nextTooltip)
@@ -291,7 +316,12 @@ async function refresh() {
   if (cfg.get("showCodex", true)) {
     items.codex.show();
     const opt = { tol: cfg.get("paceTolerance", 5), fiveFloor };
-    try { renderCodex(items.codex, "Codex", await fetchCodex(), opt); }
+    try {
+      const d = await fetchCodex();
+      if (d.weekly && d.resets > 0) d.resetsExpiry = await fetchCodexCreditsExpiry(d.resets);
+      else d.resetsExpiry = null;
+      renderCodex(items.codex, "Codex", d, opt);
+    }
     catch (e) { renderCodex(items.codex, "Codex", { error: e.message }, opt); }
   } else items.codex.hide();
 }
@@ -327,4 +357,4 @@ function deactivate() { if (timer) clearInterval(timer); }
 module.exports = { activate, deactivate };
 // test hooks (VS Code only invokes activate/deactivate; exposing these is harmless and
 // lets the credential/refresh paths be exercised without a VS Code host).
-module.exports._internal = { readClaudeCreds, refreshClaudeToken, fetchClaude, parseClaudeCreds, renderProvider, fetchCodex, renderCodex };
+module.exports._internal = { readClaudeCreds, refreshClaudeToken, fetchClaude, parseClaudeCreds, renderProvider, fetchCodex, fetchCodexCreditsExpiry, renderCodex };

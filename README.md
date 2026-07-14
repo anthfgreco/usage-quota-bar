@@ -50,8 +50,11 @@ on-pace remaining = time left / window * 100
 
 `δ < -tolerance` → 🔥, `δ > +tolerance` → 🧊, otherwise on pace. Default tolerance
 is ±5 points (`usageQuotaBar.paceTolerance`). Hover shows exact reset day/time,
-δ vs even burn with the on-pace %, reset credits available, and the extra
-`GPT-5.3-Codex-Spark` weekly limit when the API reports one.
+δ vs even burn with the on-pace %, reset credits available — with the nearest
+credit expiry, e.g. `↺ Rate-limit resets available: 4 · nearest expires Jul 18 (4d)`
+— and the extra `GPT-5.3-Codex-Spark` weekly limit when the API reports one.
+(Credit details come from a second endpoint, fetched only when the count changes
+or hourly.)
 
 ## When does a window appear? (Claude only)
 

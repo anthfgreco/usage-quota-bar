@@ -24,6 +24,20 @@ const WEEKLY_BODY = JSON.stringify({
   }],
   rate_limit_reset_credits: { available_count: 4 },
 });
+const CREDITS_BODY = JSON.stringify({
+  credits: [
+    { id: "RateLimitResetCredit_aaa", reset_type: "codex_rate_limits",
+      status: "available", granted_at: "2026-06-18T00:33:46.788614Z",
+      expires_at: "2026-07-18T00:33:46.788614Z",
+      redeem_started_at: null, redeemed_at: null, title: "Full reset", description: "..." },
+    { id: "RateLimitResetCredit_bbb", reset_type: "codex_rate_limits",
+      status: "available", granted_at: "2026-06-27T00:03:01.980864Z",
+      expires_at: "2026-07-27T00:03:01.980864Z",
+      redeem_started_at: null, redeemed_at: null, title: "Full reset", description: "..." },
+  ],
+  available_count: 2,
+  total_earned_count: 0,
+});
 
 const Module = require("module");
 const vscodeStub = {
@@ -33,13 +47,19 @@ const vscodeStub = {
   ThemeColor: class { constructor(id) { this.id = id; } },
   commands: { registerCommand: () => ({}) },
 };
-const seen = { auth: null, account: null };
+const seen = { auth: null, account: null, usageRequests: 0, creditsRequests: 0 };
 const httpsStub = {
   request(opts, cb) {
     seen.auth = opts.headers.authorization;
     seen.account = opts.headers["chatgpt-account-id"];
+    let body = WEEKLY_BODY;
+    if (opts.path === "/backend-api/wham/usage") seen.usageRequests++;
+    else if (opts.path === "/backend-api/wham/rate-limit-reset-credits") {
+      seen.creditsRequests++;
+      body = CREDITS_BODY;
+    } else body = JSON.stringify({ error: "unexpected path" });
     const res = { statusCode: 200, headers: {},
-      on(ev, fn) { if (ev === "data") fn(WEEKLY_BODY); if (ev === "end") fn(); return this; } };
+      on(ev, fn) { if (ev === "data") fn(body); if (ev === "end") fn(); return this; } };
     return { on() { return this; }, setTimeout() { return this; }, write() {}, end() { cb(res); } };
   },
 };
@@ -55,6 +75,8 @@ const I = ext._internal;
 
 (async () => {
   const d = await I.fetchCodex();
+  d.resetsExpiry = await I.fetchCodexCreditsExpiry(d.resets);
+  const again = await I.fetchCodexCreditsExpiry(d.resets);
   const item = {};
   const T0 = 1700000000000;
   I.renderCodex(item, "Codex", d, { tol: 5, fiveFloor: 50 }, T0);
@@ -62,14 +84,19 @@ const I = ext._internal;
   const checks = [
     ["fetch sent bearer token", seen.auth === "Bearer CODEX_TOKEN"],
     ["fetch sent account header", seen.account === "acct_test"],
+    ["usage endpoint hit once", seen.usageRequests === 1],
+    ["credits endpoint hit once", seen.creditsRequests === 1],
+    ["same-count credits lookup cached", again === d.resetsExpiry && seen.creditsRequests === 1],
     ["weekly shape parsed", !d.error && d.weekly && d.weekly.rem === 78],
     ["spark parsed", d.spark && d.spark.rem === 100],
     ["resets parsed", d.resets === 4],
+    ["credits expiry fetched", d.resetsExpiry === Date.parse("2026-07-18T00:33:46.788614Z")],
     ["bar text (hot, credits after glyph, no calendar)", item.text === "🟢 Codex  78% (5d) 🔥4"],
     ["item color green", item.color && item.color.id === "charts.green"],
     ["tooltip committed", typeof item.tooltip === "string" && item.tooltip.startsWith("Codex\n")],
     ["tooltip pace line", item.tooltip.includes("🔥 Pace: −6 vs even burn (on-pace 84%)")],
     ["tooltip resets line", item.tooltip.includes("↺ Rate-limit resets available: 4")],
+    ["tooltip nearest expiry", item.tooltip.includes("nearest expires")],
     ["tooltip spark line", item.tooltip.includes("⚡ Spark: 100% left")],
   ];
 

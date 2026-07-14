@@ -186,7 +186,7 @@ function codexHTML(name,usedPct,leftD,credits){
   const paceLineText=p.st==='on'
     ? `Pace: on track (${signed(p.delta)} vs even burn)`
     : `${p.glyph} Pace: ${signed(p.delta)} vs even burn (on-pace ${R(p.onPace)}%)`;
-  const resetLine=`\n↺ Rate-limit resets available: ${R(credits)}`;
+  const resetLine=`\n↺ Rate-limit resets available: ${R(credits)}${credits>0?` · nearest expires ${new Date(Date.now()+4*86400000).toLocaleDateString(undefined,{month:'short',day:'numeric'})} (4d)`:''}`;
   const tip=`${name}\nWeekly: ${p.rem}% left · resets ${clk(leftD*24)}${days}\n${paceLineText}${resetLine}\n⚡ Spark: 100% left · resets ${clkCoarse(7*24)}`;
   return {html:`<span class="sbitem" title="${tip}">${parts.join('&nbsp;&nbsp;')}</span>`, pace:p};
 }

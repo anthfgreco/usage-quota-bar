@@ -238,6 +238,33 @@ function parseCodexUsage(j, httpStatus) {
   };
 }
 
+// Reset-credit detail endpoint: nearest expiry among AVAILABLE credits.
+// expires_at may be null (never expires) — such credits count but never win
+// "nearest". Returns { count, nearestExpiry } where nearestExpiry is ms epoch
+// or null (none expire / no details / no credits).
+function parseCreditsDetail(j) {
+  const list = Array.isArray(j && j.credits) ? j.credits : [];
+  const avail = list.filter((c) => c && c.status === "available");
+  const count = typeof (j && j.available_count) === "number" ? j.available_count : avail.length;
+  let nearest = null;
+  for (const c of avail) {
+    if (c.expires_at == null) continue;
+    const t = Date.parse(c.expires_at);
+    if (!isNaN(t) && (nearest == null || t < nearest)) nearest = t;
+  }
+  return { count, nearestExpiry: nearest };
+}
+
+// "Jul 18" — absolute, no countdown churn (stability contract).
+function fmtDateShort(epochMs) {
+  return new Date(epochMs).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+}
+
+// Whole days until expiry, ceiling. This churns at most once a day.
+function daysUntil(epochMs, nowMs) {
+  return Math.ceil((epochMs - nowMs) / 86400000);
+}
+
 // δ = remaining − on-pace remaining. Negative -> burning faster than even pace.
 function paceDelta(rem, timeLeftSec, windowSec) {
   const line = paceLine(timeLeftSec, windowSec);
@@ -287,7 +314,14 @@ function tooltipForCodexWeekly(name, d, nowMs, tol) {
       ? `Pace: on track (${sd} vs even burn)`
       : `${st === "hot" ? "🔥" : "🧊"} Pace: ${sd} vs even burn (on-pace ${line}%)`);
   }
-  if (d.resets != null) lines.push(`↺ Rate-limit resets available: ${d.resets}`);
+  if (d.resets != null) {
+    let line = `↺ Rate-limit resets available: ${d.resets}`;
+    if (d.resetsExpiry != null && d.resets > 0) {
+      const dd = daysUntil(d.resetsExpiry, nowMs);
+      if (dd > 0) line += ` · nearest expires ${fmtDateShort(d.resetsExpiry)} (${dd}d)`;
+    }
+    lines.push(line);
+  }
   if (d.spark) lines.push(`⚡ Spark: ${d.spark.rem == null ? "—" : d.spark.rem + "% left"} · resets ${clockLongCoarse(d.spark.reset, nowMs)}`);
   return lines.join("\n");
 }
@@ -305,6 +339,7 @@ function nextTooltipWeekly(prev, name, d, nowMs, tol, driftPct = 5) {
         m: resetEpochMin(d.weekly.reset, nowMs),
         st: paceState(d.weekly.rem, d.weekly.reset, d.weekly.win, tol),
         resets: d.resets == null ? null : d.resets,
+        expDays: d.resetsExpiry == null ? null : daysUntil(d.resetsExpiry, nowMs),
         sparkRem: d.spark ? d.spark.rem : null,
         sparkM: d.spark ? resetEpochHour(d.spark.reset, nowMs) : "none",
       };
@@ -322,6 +357,9 @@ function nextTooltipWeekly(prev, name, d, nowMs, tol, driftPct = 5) {
       (snap.st !== prev.st &&
         paceState(d.weekly.rem, d.weekly.reset, d.weekly.win, tol + 1) === snap.st) ||
       prev.resets !== snap.resets ||
+      // The nearest-expiry suffix is intentionally day-granular: a new expiry or
+      // the daily countdown tick is material; minute-level clock churn is not.
+      prev.expDays !== snap.expDays ||
       resetMoved(prev.sparkM, snap.sparkM) ||
       remDelta(prev.sparkRem, snap.sparkRem) >= driftPct;
   }
@@ -333,6 +371,7 @@ function nextTooltipWeekly(prev, name, d, nowMs, tol, driftPct = 5) {
 module.exports = {
   fmtShort, fmtLong, parseUtil, parseResetHeader, accountFromJwt,
   dotFor, paceLine, reveal5h, reveal7d, tooltipFor, nextTooltip,
-  parseCodexUsage, paceDelta, paceState, fmtSigned, codexSegment,
+  parseCodexUsage, parseCreditsDetail, fmtDateShort, daysUntil,
+  paceDelta, paceState, fmtSigned, codexSegment,
   tooltipForCodexWeekly, nextTooltipWeekly,
 };
