@@ -1,8 +1,8 @@
 "use strict";
 // Usage Quota Bar — Claude Code + Codex subscription quota in the VS Code status bar.
-// "Quiet until it matters": one item per provider showing just a colored dot + name
-// when on-track, expanding to a window's remaining % + reset only when that window
-// has something to say (pace-aware). Icon anchors: ⏱ = 5h session, 🗓 = 7d week.
+// Claude stays quiet until its 5h/7d windows matter; Codex is weekly-only and
+// always shows remaining %, days left, pace glyph, and reset credits.
+// Icon anchors: ⏱ = 5h session, 🗓 = 7d week for multi-window providers.
 // No dollars, no tokens. Zero npm deps. Reads local auth at runtime; embeds no secret.
 
 const vscode = require("vscode");
@@ -232,15 +232,7 @@ async function fetchCodex() {
   });
   let j;
   try { j = JSON.parse(res.body); } catch (_) { return { error: `bad response (HTTP ${res.status})` }; }
-  const rl = j.rate_limit || j; // windows nested under rate_limit
-  const p = rl.primary_window || rl.primaryWindow || j.primary_window || {};
-  const s = rl.secondary_window || rl.secondaryWindow || j.secondary_window || {};
-  if (p.used_percent == null && s.used_percent == null) return { error: `no quota windows (HTTP ${res.status})` };
-  const rem = (u) => (u == null ? null : Math.max(0, Math.round(100 - u)));
-  return {
-    five: { rem: rem(p.used_percent), reset: p.reset_after_seconds, win: p.limit_window_seconds || WIN5 },
-    seven: { rem: rem(s.used_percent), reset: s.reset_after_seconds, win: s.limit_window_seconds || WIN7 },
-  };
+  return L.parseCodexUsage(j, res.status);
 }
 
 // ---- status bar (one item per provider) ----------------------------------
@@ -269,6 +261,23 @@ function renderProvider(it, name, d, fiveFloor, nowMs = Date.now()) {
   it.color = colorFor(worst === 101 ? null : worst);
 }
 
+// Codex went weekly-only (July 2026): one always-on segment — dot, remaining %,
+// days left, pace glyph, reset credits. No 🗓: a single limit needs no icon
+// anchor. Legacy two-window accounts fall back to the reveal-gated renderer.
+function renderCodex(it, name, d, opt, nowMs = Date.now()) {
+  if (d.five || d.seven) return renderProvider(it, name, d, opt.fiveFloor, nowMs);
+  const t = L.nextTooltipWeekly(tipSnaps[name] || null, name, d, nowMs, opt.tol);
+  if (t) { it.tooltip = t.tooltip; tipSnaps[name] = t.snap; }
+  if (d.error) {
+    it.text = `⚪ ${name} —`;
+    it.color = colorFor(null);
+    return;
+  }
+  const w = d.weekly;
+  it.text = `${L.dotFor(w.rem)} ${name}  ${L.codexSegment(w.rem, w.reset, w.win, opt.tol, d.resets)}`;
+  it.color = colorFor(w.rem);
+}
+
 async function refresh() {
   const cfg = vscode.workspace.getConfiguration("usageQuotaBar");
   const fiveFloor = cfg.get("fiveFloor", 50);
@@ -281,8 +290,9 @@ async function refresh() {
 
   if (cfg.get("showCodex", true)) {
     items.codex.show();
-    try { renderProvider(items.codex, "Codex", await fetchCodex(), fiveFloor); }
-    catch (e) { renderProvider(items.codex, "Codex", { error: e.message }, fiveFloor); }
+    const opt = { tol: cfg.get("paceTolerance", 5), fiveFloor };
+    try { renderCodex(items.codex, "Codex", await fetchCodex(), opt); }
+    catch (e) { renderCodex(items.codex, "Codex", { error: e.message }, opt); }
   } else items.codex.hide();
 }
 
@@ -317,4 +327,4 @@ function deactivate() { if (timer) clearInterval(timer); }
 module.exports = { activate, deactivate };
 // test hooks (VS Code only invokes activate/deactivate; exposing these is harmless and
 // lets the credential/refresh paths be exercised without a VS Code host).
-module.exports._internal = { readClaudeCreds, refreshClaudeToken, fetchClaude, parseClaudeCreds, renderProvider };
+module.exports._internal = { readClaudeCreds, refreshClaudeToken, fetchClaude, parseClaudeCreds, renderProvider, fetchCodex, renderCodex };
