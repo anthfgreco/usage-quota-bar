@@ -146,5 +146,123 @@ eq("reset elapsing rewrites once", gZ !== null, true);
 eq("elapsed stays frozen",
   L.nextTooltip(gZ.snap, "Codex", D(12, -60, 86, 588578 - 1030), T0 + 1030000), null);
 
+// ---- v1.2: Codex weekly-only (OpenAI removed the 5h window, July 2026) ----
+
+// parseCodexUsage: new weekly-only shape (secondary_window null)
+const WEEKLY_JSON = {
+  rate_limit: {
+    primary_window: { used_percent: 22, limit_window_seconds: 604800, reset_after_seconds: 508511 },
+    secondary_window: null,
+  },
+  additional_rate_limits: [{
+    limit_name: "GPT-5.3-Codex-Spark",
+    rate_limit: { primary_window: { used_percent: 0, limit_window_seconds: 604800, reset_after_seconds: 604800 }, secondary_window: null },
+  }],
+  rate_limit_reset_credits: { available_count: 4 },
+};
+const pw = L.parseCodexUsage(WEEKLY_JSON, 200);
+eq("parse weekly rem", pw.weekly.rem, 78);
+eq("parse weekly reset", pw.weekly.reset, 508511);
+eq("parse weekly win", pw.weekly.win, 604800);
+eq("parse spark rem", pw.spark.rem, 100);
+eq("parse resets", pw.resets, 4);
+eq("parse weekly has no five", pw.five === undefined, true);
+
+// legacy two-window shape still parses (accounts not yet migrated)
+const LEGACY_JSON = { rate_limit: {
+  primary_window: { used_percent: 40, limit_window_seconds: 18000, reset_after_seconds: 9000 },
+  secondary_window: { used_percent: 10, limit_window_seconds: 604800, reset_after_seconds: 500000 },
+} };
+const pl = L.parseCodexUsage(LEGACY_JSON, 200);
+eq("legacy five rem", pl.five.rem, 60);
+eq("legacy seven rem", pl.seven.rem, 90);
+eq("legacy has no weekly", pl.weekly === undefined, true);
+
+// degenerate shapes -> error
+eq("no windows -> error", L.parseCodexUsage({}, 200).error, "no quota windows (HTTP 200)");
+eq("weekly-only null used -> error",
+  L.parseCodexUsage({ rate_limit: { primary_window: {}, secondary_window: null } }, 500).error,
+  "no quota windows (HTTP 500)");
+
+// pace verdicts — tol 5; window 604800
+eq("pace hot", L.paceState(78, 508511, 604800, 5), "hot");     // δ ≈ −6.08
+eq("pace on (exactly -tol)", L.paceState(79, 508032, 604800, 5), "on"); // line 84, δ = −5 exactly
+eq("pace cool", L.paceState(92, 129600, 604800, 5), "cool");   // line ≈ 21.4
+eq("pace null rem", L.paceState(null, 1000, 604800, 5), null);
+eq("pace null window", L.paceState(50, 1000, 0, 5), null);
+eq("fmtSigned -6", L.fmtSigned(-6.08), "−6");
+eq("fmtSigned +41", L.fmtSigned(40.6), "+41");
+eq("fmtSigned zero", L.fmtSigned(0), "±0");
+
+// bar segment — no 🗓, credits after glyph, ↺ when on pace, hidden at 0
+eq("segment hot+credits", L.codexSegment(78, 508511, 604800, 5, 4), "78% (5d) 🔥4");
+eq("segment hot no credits", L.codexSegment(78, 508511, 604800, 5, 0), "78% (5d) 🔥");
+eq("segment on pace w/ credits", L.codexSegment(55, 336960, 604800, 5, 4), "55% (3d) ↺4");
+eq("segment on pace bare", L.codexSegment(55, 336960, 604800, 5, null), "55% (3d)");
+eq("segment cool", L.codexSegment(92, 129600, 604800, 5, 4), "92% (1d) 🧊4");
+eq("segment unknown rem", L.codexSegment(null, null, 604800, 5, null), "— (?)");
+
+// weekly tooltip — shape and stability
+const WD = { weekly: { rem: 78, reset: 508511, win: 604800 },
+             spark: { name: "GPT-5.3-Codex-Spark", rem: 100, reset: 604800 }, resets: 4 };
+const wt = L.tooltipForCodexWeekly("Codex", WD, T0, 5);
+eq("weekly tooltip first line", wt.split("\n")[0], "Codex");
+eq("weekly tooltip has weekly line", wt.includes("Weekly: 78% left · resets "), true);
+eq("weekly tooltip day suffix", wt.includes("(5d left)"), true);
+eq("weekly tooltip pace", wt.includes("🔥 Pace: −6 vs even burn (on-pace 84%)"), true);
+eq("weekly tooltip resets", wt.includes("↺ Rate-limit resets available: 4"), true);
+eq("weekly tooltip spark", wt.includes("⚡ Spark: 100% left · resets "), true);
+eq("weekly tooltip no calendar icon", wt.includes("🗓"), false);
+// byte-stable across one refresh tick (same quota, ~60s lower reset + API jitter;
+// −58 not −62: keeps the reset epoch inside the same rounded minute — boundary
+// wobble is the gate's job, not the builder's)
+const wt2 = L.tooltipForCodexWeekly("Codex",
+  { ...WD, weekly: { rem: 78, reset: 508511 - 58, win: 604800 } }, T0 + 60000, 5);
+eq("weekly tooltip stable across tick", wt, wt2);
+// on-pace copy, no spark/resets lines when absent
+const wtOn = L.tooltipForCodexWeekly("Codex",
+  { weekly: { rem: 55, reset: 336960, win: 604800 }, spark: null, resets: null }, T0, 5);
+eq("on-pace copy", wtOn.includes("Pace: on track ("), true);
+eq("no resets line when null", wtOn.includes("↺"), false);
+eq("no spark line when null", wtOn.includes("⚡"), false);
+
+// weekly rewrite gate
+const gw1 = L.nextTooltipWeekly(null, "Codex", WD, T0, 5);
+eq("weekly gate first render commits", gw1 !== null, true);
+eq("weekly gate tooltip matches builder", gw1.tooltip, wt);
+// one tick later: rem drifts 1, reset −60s -> frozen
+eq("weekly 1% drift no rewrite", L.nextTooltipWeekly(gw1.snap, "Codex",
+  { ...WD, weekly: { rem: 77, reset: 508449, win: 604800 } }, T0 + 62000, 5), null);
+// 5-point drift -> rewrite
+eq("weekly 5% drift rewrites", L.nextTooltipWeekly(gw1.snap, "Codex",
+  { ...WD, weekly: { rem: 73, reset: 508000, win: 604800 } }, T0 + 300000, 5) !== null, true);
+// pace verdict flip is material even under drift threshold: rem 78→80 crosses δ −6→−4 (hot→on)
+eq("verdict flip rewrites", L.nextTooltipWeekly(gw1.snap, "Codex",
+  { ...WD, weekly: { rem: 80, reset: 508511, win: 604800 } }, T0, 5) !== null, true);
+// credits change is material
+eq("credits change rewrites", L.nextTooltipWeekly(gw1.snap, "Codex",
+  { ...WD, resets: 3 }, T0, 5) !== null, true);
+// spark disappearing is material
+eq("spark vanish rewrites", L.nextTooltipWeekly(gw1.snap, "Codex",
+  { ...WD, spark: null }, T0, 5) !== null, true);
+// an untouched spark limit slides its reset epoch forward every fetch
+// (reset_after_seconds pinned at the full window). That slide must NOT be
+// material — minute-level tracking would rewrite (and kill the hover) every
+// ~2 minutes all week long.
+eq("sliding spark epoch does not rewrite", L.nextTooltipWeekly(gw1.snap, "Codex",
+  { ...WD, weekly: { rem: 78, reset: 508511 - 120, win: 604800 } }, T0 + 120000, 5), null);
+// a genuine spark window rollover (hours-scale jump) is still material
+const gwR = L.nextTooltipWeekly(null, "Codex",
+  { ...WD, spark: { name: "GPT-5.3-Codex-Spark", rem: 40, reset: 3600 } }, T0, 5);
+eq("spark rollover rewrites", L.nextTooltipWeekly(gwR.snap, "Codex",
+  { ...WD, spark: { name: "GPT-5.3-Codex-Spark", rem: 40, reset: 604800 } }, T0 + 60000, 5) !== null, true);
+// error flip both ways, frozen while persisting
+const gwE = L.nextTooltipWeekly(gw1.snap, "Codex", { error: "no Codex credentials found" }, T0, 5);
+eq("weekly error rewrites", gwE !== null, true);
+eq("weekly error text", gwE.tooltip, "Codex: no Codex credentials found");
+eq("weekly same error frozen", L.nextTooltipWeekly(gwE.snap, "Codex",
+  { error: "no Codex credentials found" }, T0 + 62000, 5), null);
+eq("weekly error clear rewrites", L.nextTooltipWeekly(gwE.snap, "Codex", WD, T0, 5) !== null, true);
+
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

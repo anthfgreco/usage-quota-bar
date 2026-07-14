@@ -119,6 +119,18 @@ function clockLong(resetSec, nowMs) {
     .replace(",", "");
 }
 
+// Additional Codex limits can report a full-window reset without ticking down in
+// lockstep with the primary window. Display and gate both stay hour-granular so
+// that sliding reset epochs don't look material while an untouched limit sits full.
+function clockLongCoarse(resetSec, nowMs) {
+  if (resetSec != null && resetSec <= 0) return "soon";
+  const d = resetClock(resetSec, nowMs);
+  if (!d) return "unknown";
+  return d
+    .toLocaleString(undefined, { weekday: "short", hour: "numeric" })
+    .replace(",", "");
+}
+
 function tooltipFor(name, five, seven, nowMs) {
   return (
     `${name}\n` +
@@ -154,10 +166,16 @@ function resetEpochMin(resetSec, nowMs) {
   return Math.round((nowMs + resetSec * 1000) / 60000);
 }
 
+function resetEpochHour(resetSec, nowMs) {
+  if (resetSec == null) return "unknown";
+  if (resetSec <= 0) return "soon"; // elapsed sentinel, same as the minute gate
+  return Math.round((nowMs + resetSec * 1000) / 3600000);
+}
+
 function resetMoved(a, b) {
-  if (typeof a !== typeof b) return true; // minute <-> "soon"/"unknown"
+  if (typeof a !== typeof b) return true; // epoch unit <-> "soon"/"unknown"
   if (typeof a === "string") return a !== b; // sentinel change
-  return Math.abs(a - b) >= 2; // tolerate ±1 min rounding wobble
+  return Math.abs(a - b) >= 2; // tolerate ±1 rounding wobble in the caller's unit
 }
 
 // prev: the snapshot committed with the currently-shown tooltip (null on first render).
@@ -186,7 +204,131 @@ function nextTooltip(prev, name, d, nowMs, driftPct = 5) {
   return { tooltip, snap };
 }
 
+// ---- Codex weekly-only (v1.2) ---------------------------------------------
+// July 2026: OpenAI removed Codex's 5h session window. The usage endpoint now
+// returns the WEEKLY window in primary_window and secondary_window: null.
+// Accounts not yet migrated still send the old two-window shape, so parsing is
+// shape-detected: secondary present -> legacy {five, seven}; absent -> weekly.
+
+const WEEK = 7 * 24 * 3600;
+
+function parseCodexUsage(j, httpStatus) {
+  const rl = j.rate_limit || j;
+  const p = rl.primary_window || rl.primaryWindow || j.primary_window || null;
+  const s = rl.secondary_window || rl.secondaryWindow || j.secondary_window || null;
+  const rem = (u) => (u == null ? null : Math.max(0, Math.round(100 - u)));
+  if (s) { // legacy two-window shape
+    if ((p ? p.used_percent : null) == null && s.used_percent == null)
+      return { error: `no quota windows (HTTP ${httpStatus})` };
+    return {
+      five: { rem: rem(p ? p.used_percent : null), reset: p ? p.reset_after_seconds : null, win: (p && p.limit_window_seconds) || 5 * 3600 },
+      seven: { rem: rem(s.used_percent), reset: s.reset_after_seconds, win: s.limit_window_seconds || WEEK },
+    };
+  }
+  if (!p || p.used_percent == null) return { error: `no quota windows (HTTP ${httpStatus})` };
+  const extra = Array.isArray(j.additional_rate_limits) ? j.additional_rate_limits[0] : null;
+  const ew = extra && extra.rate_limit && extra.rate_limit.primary_window;
+  const rc = j.rate_limit_reset_credits;
+  return {
+    weekly: { rem: rem(p.used_percent), reset: p.reset_after_seconds, win: p.limit_window_seconds || WEEK },
+    spark: ew && ew.used_percent != null
+      ? { name: extra.limit_name || "Spark", rem: rem(ew.used_percent), reset: ew.reset_after_seconds }
+      : null,
+    resets: rc && typeof rc.available_count === "number" ? rc.available_count : null,
+  };
+}
+
+// δ = remaining − on-pace remaining. Negative -> burning faster than even pace.
+function paceDelta(rem, timeLeftSec, windowSec) {
+  const line = paceLine(timeLeftSec, windowSec);
+  if (rem == null || line == null) return null;
+  return rem - line;
+}
+
+// Verdict with ±tol points of the weekly limit counted as on pace.
+function paceState(rem, timeLeftSec, windowSec, tol) {
+  const d = paceDelta(rem, timeLeftSec, windowSec);
+  if (d == null) return null;
+  if (d < -tol) return "hot";
+  if (d > tol) return "cool";
+  return "on";
+}
+
+function fmtSigned(d) {
+  const r = Math.round(d);
+  return r > 0 ? `+${r}` : r < 0 ? `−${Math.abs(r)}` : "±0"; // U+2212, house style
+}
+
+// Bar segment after "{dot} Codex ": no 🗓 (a single limit needs no icon anchor).
+// Credits ride the pace glyph ("🔥4"); with no glyph they get ↺ so the count
+// doesn't float alone; 0/absent stays hidden.
+function codexSegment(rem, reset, win, tol, credits) {
+  const base = `${rem == null ? "—" : rem + "%"} (${fmtLong(reset)})`;
+  const st = paceState(rem, reset, win, tol);
+  const glyph = st === "hot" ? "🔥" : st === "cool" ? "🧊" : "";
+  const cr = credits != null && credits > 0 ? String(credits) : "";
+  if (glyph) return cr ? `${base} ${glyph}${cr}` : `${base} ${glyph}`;
+  return cr ? `${base} ↺${cr}` : base;
+}
+
+// Weekly tooltip. Same stability contract as tooltipFor: minute-rounded absolute
+// clocks; the day-granular "(5d left)" suffix only appears at >= 1 day so the
+// string can't churn per-minute (rewrites are gated by nextTooltipWeekly anyway).
+function tooltipForCodexWeekly(name, d, nowMs, tol) {
+  const w = d.weekly;
+  const lines = [name];
+  const days = w.reset != null && w.reset >= 86400 ? ` (${fmtLong(w.reset)} left)` : "";
+  lines.push(`Weekly: ${w.rem == null ? "—" : w.rem + "% left"} · resets ${clockLong(w.reset, nowMs)}${days}`);
+  const st = paceState(w.rem, w.reset, w.win, tol);
+  if (st != null) {
+    const sd = fmtSigned(paceDelta(w.rem, w.reset, w.win));
+    const line = Math.round(paceLine(w.reset, w.win));
+    lines.push(st === "on"
+      ? `Pace: on track (${sd} vs even burn)`
+      : `${st === "hot" ? "🔥" : "🧊"} Pace: ${sd} vs even burn (on-pace ${line}%)`);
+  }
+  if (d.resets != null) lines.push(`↺ Rate-limit resets available: ${d.resets}`);
+  if (d.spark) lines.push(`⚡ Spark: ${d.spark.rem == null ? "—" : d.spark.rem + "% left"} · resets ${clockLongCoarse(d.spark.reset, nowMs)}`);
+  return lines.join("\n");
+}
+
+// Weekly analogue of nextTooltip: same materiality machinery, weekly-only snapshot.
+// Extra material events: pace verdict flip, reset-credit count change, spark
+// appear/vanish/move/drift. Spark uses hour epochs to match clockLongCoarse:
+// untouched full-window limits slide by minutes, but real rollovers jump by days.
+function nextTooltipWeekly(prev, name, d, nowMs, tol, driftPct = 5) {
+  const snap = d.error
+    ? { error: String(d.error) }
+    : {
+        error: null,
+        rem: d.weekly.rem,
+        m: resetEpochMin(d.weekly.reset, nowMs),
+        st: paceState(d.weekly.rem, d.weekly.reset, d.weekly.win, tol),
+        resets: d.resets == null ? null : d.resets,
+        sparkRem: d.spark ? d.spark.rem : null,
+        sparkM: d.spark ? resetEpochHour(d.spark.reset, nowMs) : "none",
+      };
+  let material;
+  if (!prev) material = true;
+  else if ((prev.error || null) !== (snap.error || null)) material = true;
+  else if (snap.error) material = false;
+  else {
+    material =
+      resetMoved(prev.m, snap.m) ||
+      remDelta(prev.rem, snap.rem) >= driftPct ||
+      prev.st !== snap.st ||
+      prev.resets !== snap.resets ||
+      resetMoved(prev.sparkM, snap.sparkM) ||
+      remDelta(prev.sparkRem, snap.sparkRem) >= driftPct;
+  }
+  if (!material) return null;
+  const tooltip = d.error ? `${name}: ${d.error}` : tooltipForCodexWeekly(name, d, nowMs, tol);
+  return { tooltip, snap };
+}
+
 module.exports = {
   fmtShort, fmtLong, parseUtil, parseResetHeader, accountFromJwt,
   dotFor, paceLine, reveal5h, reveal7d, tooltipFor, nextTooltip,
+  parseCodexUsage, paceDelta, paceState, fmtSigned, codexSegment,
+  tooltipForCodexWeekly, nextTooltipWeekly,
 };
