@@ -6,7 +6,7 @@ provider:
 
 ```
 Claude (quiet until it matters):   🟢 Claude        🟡 Claude  ⏱ 12% (4h19m)
-Codex (always on, weekly):         🟢 Codex  78% (5d) 🔥4      🔴 Codex  6% (1d)
+Codex (always on, weekly):         🟢 Codex  78% (5d) 🔥4      🔴 Codex  6% (1d) 🔥
 ```
 
 - **Claude is unchanged:** rolling **5-hour** + **7-day** windows, quiet until it

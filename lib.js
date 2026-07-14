@@ -313,10 +313,14 @@ function nextTooltipWeekly(prev, name, d, nowMs, tol, driftPct = 5) {
   else if ((prev.error || null) !== (snap.error || null)) material = true;
   else if (snap.error) material = false;
   else {
+    // A ±1 rem wobble at the tolerance boundary can flip the displayed verdict
+    // every tick; require the new verdict to survive tol+1 before rewriting.
+    // A real trend crosses that band soon enough, and driftPct still cuts through.
     material =
       resetMoved(prev.m, snap.m) ||
       remDelta(prev.rem, snap.rem) >= driftPct ||
-      prev.st !== snap.st ||
+      (snap.st !== prev.st &&
+        paceState(d.weekly.rem, d.weekly.reset, d.weekly.win, tol + 1) === snap.st) ||
       prev.resets !== snap.resets ||
       resetMoved(prev.sparkM, snap.sparkM) ||
       remDelta(prev.sparkRem, snap.sparkRem) >= driftPct;

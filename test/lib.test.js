@@ -256,6 +256,19 @@ const gwR = L.nextTooltipWeekly(null, "Codex",
   { ...WD, spark: { name: "GPT-5.3-Codex-Spark", rem: 40, reset: 3600 } }, T0, 5);
 eq("spark rollover rewrites", L.nextTooltipWeekly(gwR.snap, "Codex",
   { ...WD, spark: { name: "GPT-5.3-Codex-Spark", rem: 40, reset: 604800 } }, T0 + 60000, 5) !== null, true);
+// verdict-boundary graze: line 84.00 (reset 508032), rem wobbling 79↔78 flips
+// δ across −5/−6 every tick. Without hysteresis every flip rewrites and an open
+// hover dies each refresh; the flip must only be material once it clears the
+// boundary by a full point.
+const gB = L.nextTooltipWeekly(null, "Codex",
+  { weekly: { rem: 79, reset: 508032, win: 604800 }, spark: null, resets: null }, T0, 5);
+eq("boundary graze on->hot frozen", L.nextTooltipWeekly(gB.snap, "Codex",
+  { weekly: { rem: 78, reset: 508032 - 60, win: 604800 }, spark: null, resets: null }, T0 + 60000, 5), null);
+eq("boundary graze back to on frozen", L.nextTooltipWeekly(gB.snap, "Codex",
+  { weekly: { rem: 79, reset: 508032 - 120, win: 604800 }, spark: null, resets: null }, T0 + 120000, 5), null);
+// clearly past the boundary (δ −6.5 < −(tol+1)) -> the flip commits
+eq("clear crossing rewrites", L.nextTooltipWeekly(gB.snap, "Codex",
+  { weekly: { rem: 77, reset: 505008, win: 604800 }, spark: null, resets: null }, T0 + 300000, 5) !== null, true);
 // error flip both ways, frozen while persisting
 const gwE = L.nextTooltipWeekly(gw1.snap, "Codex", { error: "no Codex credentials found" }, T0, 5);
 eq("weekly error rewrites", gwE !== null, true);

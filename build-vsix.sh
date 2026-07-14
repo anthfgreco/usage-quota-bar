@@ -29,7 +29,7 @@ cat > "$STG/extension.vsixmanifest" <<XML
   <Metadata>
     <Identity Language="en-US" Id="${NAME}" Version="${VERSION}" Publisher="${PUBLISHER}"/>
     <DisplayName>Usage Quota Bar (Claude + Codex)</DisplayName>
-    <Description xml:space="preserve">Quiet, pace-aware subscription quota (5h + 7d) for Claude Code and Codex in the status bar.</Description>
+    <Description xml:space="preserve">Claude Code (5h + 7d) and Codex (weekly) subscription quota in the status bar — quiet, pace-aware, % remaining.</Description>
     <Tags>claude,codex,usage,quota</Tags><Categories>Other</Categories><GalleryFlags>Public</GalleryFlags>
     <Properties><Property Id="Microsoft.VisualStudio.Code.Engine" Value="^1.74.0" /></Properties>
   </Metadata>
