@@ -81,7 +81,7 @@
 <div class="wrap">
   <div class="kicker"><span class="pulse"></span>Usage Quota Bar · live demo</div>
   <h1>See how it <em>behaves</em></h1>
-  <p class="lede">This is exactly what the extension shows in your VS Code status bar. It’s <b>quiet until it matters</b>: each provider is one item that’s just a coloured dot when you’re fine, and reveals a window’s numbers only when that window is worth knowing. Drag the sliders (or hit a demo button) and watch the <b>“why”</b> panel explain every change. <a href="https://github.com/achromichat/usage-quota-bar">← back to the repo</a></p>
+  <p class="lede">This is exactly what the extension shows in your VS Code status bar. Since OpenAI's July 2026 weekly-only change, <b>Codex is always-on</b>: one weekly segment with pace and reset credits. Claude stays <b>quiet until it matters</b>, revealing a window’s numbers only when that window is worth knowing. Drag the sliders (or hit a demo button) and watch the <b>“why”</b> panel explain every change. <a href="https://github.com/achromichat/usage-quota-bar">← back to the repo</a></p>
 
   <div class="stage">
     <div class="editorhint"><b>VS Code</b> · status bar (bottom-right) · hover an item for exact reset times</div>
@@ -107,16 +107,16 @@
         <div class="sld"><label>7d in</label><input type="range" min="0" max="7" step="0.5" value="5" data-k="c7t"><span class="v" data-v="c7t">5d</span></div>
       </div>
       <div><div class="sgh">Codex</div>
-        <div class="sld"><label>5h %</label><input type="range" min="0" max="100" value="22" data-k="x5"><span class="v" data-v="x5">22%</span></div>
-        <div class="sld"><label>5h in</label><input type="range" min="0" max="5" step="0.25" value="3.5" data-k="x5t"><span class="v" data-v="x5t">3h30m</span></div>
-        <div class="sld"><label>7d %</label><input type="range" min="0" max="100" value="88" data-k="x7"><span class="v" data-v="x7">88%</span></div>
-        <div class="sld"><label>7d in</label><input type="range" min="0" max="7" step="0.5" value="2" data-k="x7t"><span class="v" data-v="x7t">2d</span></div>
+        <div class="sld"><label>used %</label><input type="range" min="0" max="100" step="1" value="22" data-k="xw"><span class="v" data-v="xw">22%</span></div>
+        <div class="sld"><label>resets in</label><input type="range" min="0" max="7" step="0.1" value="5.9" data-k="xwt"><span class="v" data-v="xwt">5d</span></div>
+        <div class="sld"><label>resets ↺</label><input type="range" min="0" max="8" step="1" value="4" data-k="xcr"><span class="v" data-v="xcr">4</span></div>
       </div>
     </div>
   </div>
 
   <div class="legend">
-    <span>⏱ <b>5h</b> session window</span><span>🗓 <b>7d</b> weekly window</span>
+    <span>⏱ <b>5h</b> · 🗓 <b>7d</b> (Claude)</span>
+    <span><b>Codex:</b> one weekly limit — 🔥 faster / 🧊 slower than even pace · ↺N = rate-limit resets left</span>
     <span>dot = worse window: <span class="c-green">🟢 &gt;30</span> · <span class="c-amber">🟡 ≤30</span> · <span class="c-red">🔴 ≤10</span></span>
   </div>
 
@@ -128,7 +128,7 @@
 </div>
 
 <script>
-const state={c5:82,c5t:4,c7:95,c7t:5, x5:22,x5t:3.5,x7:88,x7t:2, rev:50};
+const state={c5:82,c5t:4,c7:95,c7t:5, xw:22,xwt:5.9,xcr:4, rev:50};
 let theme='dark';
 const CLOCK='⏱', CAL='🗓';
 function dotFor(p){return p==null?'⚪':p<=10?'🔴':p<=30?'🟡':'🟢';}
@@ -138,7 +138,9 @@ function col(p,s){return colorOK()?`<span class="${clsFor(p)}">${s}</span>`:s;}
 const R=Math.round;
 function hrStr(h){const m=R(h*60),hh=Math.floor(m/60),mm=m%60;return hh>=1?(mm>0?`${hh}h${mm}m`:`${hh}h`):`${mm}m`;}
 function dStr(d){return d>=1?`${R(d)}d`:`${R(d*24)}h`;}
+function longStr(d){return d>=1?`${Math.floor(d)}d`:hrStr(d*24);}
 function paceLine(tl,win){if(!win||win<=0)return null;return Math.max(0,Math.min(100,tl/win*100));}
+function signed(n){const r=R(n);return r>0?`+${r}`:r<0?`−${Math.abs(r)}`:'±0';}
 
 // EXACT mirror of lib.js reveal rules + a human reason for the "why" panel
 function reason5(rem,tl){const line=paceLine(tl,5);
@@ -152,6 +154,7 @@ function reason7(rem,tl){const line=paceLine(tl,7), frac=tl/7;
   return {show:false, why:`on track — quiet`};}
 
 function clk(hoursFromNow){const d=new Date(Date.now()+hoursFromNow*3600*1000);return d.toLocaleString(undefined,{weekday:'short',hour:'numeric',minute:'2-digit'}).replace(',','');}
+function clkCoarse(hoursFromNow){const d=new Date(Date.now()+hoursFromNow*3600*1000);return d.toLocaleString(undefined,{weekday:'short',hour:'numeric'}).replace(',','');}
 
 function providerHTML(name,h5,h5t,h7,h7t){
   const worst=Math.min(h5,h7);
@@ -163,23 +166,51 @@ function providerHTML(name,h5,h5t,h7,h7t){
   return {html:`<span class="sbitem" title="${tip}">${parts.join('&nbsp;&nbsp;')}</span>`, r5, r7};
 }
 
+function codexPace(usedPct,leftD,credits){
+  const rem=Math.max(0,R(100-usedPct));
+  const onPace=paceLine(leftD,7);
+  const delta=rem-onPace;
+  const st=delta<-5?'hot':delta>5?'cool':'on';
+  const glyph=st==='hot'?'🔥':st==='cool'?'🧊':'';
+  const cr=credits>0?String(R(credits)):'';
+  const verdict=st==='hot'?'faster than pace':st==='cool'?'slower than pace':'on pace';
+  const pill=st==='hot'?'faster':st==='cool'?'slower':'on pace';
+  return {rem,onPace,delta,st,glyph,cr,verdict,pill};
+}
+
+function codexHTML(name,usedPct,leftD,credits){
+  const p=codexPace(usedPct,leftD,credits);
+  const creditText=p.glyph?(p.cr?` ${p.glyph}${p.cr}`:` ${p.glyph}`):(p.cr?` ↺${p.cr}`:'');
+  const parts=[`${dotFor(p.rem)} ${name}`,`${col(p.rem,p.rem+'%')} <span class="sub">(${longStr(leftD)})</span>${creditText}`];
+  const days=leftD>=1?` (${longStr(leftD)} left)`:'';
+  const paceLineText=p.st==='on'
+    ? `Pace: on track (${signed(p.delta)} vs even burn)`
+    : `${p.glyph} Pace: ${signed(p.delta)} vs even burn (on-pace ${R(p.onPace)}%)`;
+  const resetLine=`\n↺ Rate-limit resets available: ${R(credits)}`;
+  const tip=`${name}\nWeekly: ${p.rem}% left · resets ${clk(leftD*24)}${days}\n${paceLineText}${resetLine}\n⚡ Spark: 100% left · resets ${clkCoarse(7*24)}`;
+  return {html:`<span class="sbitem" title="${tip}">${parts.join('&nbsp;&nbsp;')}</span>`, pace:p};
+}
+
 function render(){
   const c=providerHTML('Claude',state.c5,state.c5t,state.c7,state.c7t);
-  const x=providerHTML('Codex',state.x5,state.x5t,state.x7,state.x7t);
+  const x=codexHTML('Codex',state.xw,state.xwt,state.xcr);
   document.getElementById('sbar').className='sbar '+theme;
   document.getElementById('sbar').innerHTML=c.html+'<span class="divider"></span>'+x.html;
   document.getElementById('hcnote').innerHTML = theme==='hc'
     ? '⚠ High Contrast themes drop custom text colour — that’s why the % isn’t coloured here. The emoji dots & icons still carry the signal (this is honest: it’s how it really looks in HC).'
     : 'Tip: switch to <b>High Contrast</b> to see how it looks when VS Code suppresses text colour — the dots still work.';
   const row=(lab,r)=>`<div class="wrow"><span class="lab">${lab}</span><span class="pill ${r.show?'show':''}">${r.show?'shown':'hidden'}</span><span class="rsn">${r.why}</span></div>`;
+  const pace=x.pace;
+  const codexReason=`${pace.rem}% left vs ${R(pace.onPace)}% on-pace (δ ${signed(pace.delta)}) · ↺${R(state.xcr)} resets`;
+  const codexRow=`<div class="wrow"><span class="lab">7d</span><span class="pill show">${pace.pill}</span><span class="rsn">${pace.glyph?pace.glyph+' ':''}${pace.verdict} · ${codexReason}</span></div>`;
   document.getElementById('why').innerHTML=
     `<div class="wcard"><div class="wh">Claude — why</div>${row('⏱5h',c.r5)}${row('🗓7d',c.r7)}</div>`+
-    `<div class="wcard"><div class="wh">Codex — why</div>${row('⏱5h',x.r5)}${row('🗓7d',x.r7)}</div>`;
+    `<div class="wcard"><div class="wh">Codex — pace</div>${codexRow}</div>`;
 }
 render();
 
 document.querySelectorAll('#theme button').forEach(b=>b.onclick=()=>{document.querySelectorAll('#theme button').forEach(x=>x.classList.remove('on'));b.classList.add('on');theme=b.dataset.t;render();});
-function fmt(k,v){if(k.endsWith('5t'))return hrStr(v);if(k.endsWith('7t'))return dStr(v);return R(v)+'%';}
+function fmt(k,v){if(k.endsWith('5t'))return hrStr(v);if(k.endsWith('7t'))return dStr(v);if(k==='xwt')return longStr(v);if(k==='xcr')return R(v);return R(v)+'%';}
 document.querySelectorAll('#sliders input,.rev').forEach(inp=>inp.oninput=()=>{state[inp.dataset.k]=+inp.value;
   document.querySelector(`[data-v="${inp.dataset.k}"]`).textContent=fmt(inp.dataset.k,+inp.value);render();});
 
@@ -187,10 +218,10 @@ let timer=null;
 function stopAll(){if(timer){clearInterval(timer);timer=null;}const m={burn:'▶ Burn 5h',busy:'▶ Busy week',lazy:'▶ Lazy week'};['burn','busy','lazy'].forEach(id=>document.getElementById(id).textContent=m[id]);}
 function sync(){document.querySelectorAll('#sliders input').forEach(inp=>{inp.value=state[inp.dataset.k];document.querySelector(`[data-v="${inp.dataset.k}"]`).textContent=fmt(inp.dataset.k,state[inp.dataset.k]);});render();}
 function run(id,tick){const btn=document.getElementById(id);const mine=btn.textContent[0]==='⏸';stopAll();if(mine)return;btn.textContent='⏸ Pause';timer=setInterval(()=>{if(!tick())stopAll();sync();},150);}
-document.getElementById('burn').onclick=()=>run('burn',()=>{let a=false;[['c5','c5t'],['x5','x5t']].forEach(([p,t])=>{if(state[p]>0){state[p]=Math.max(0,state[p]-3);a=true;}if(state[t]>0)state[t]=Math.max(0,state[t]-0.08);});return a;});
-document.getElementById('busy').onclick=()=>run('busy',()=>{let a=false;[['c7','c7t'],['x7','x7t']].forEach(([p,t])=>{if(state[p]>0){state[p]=Math.max(0,state[p]-2.4);a=true;}if(state[t]>0)state[t]=Math.max(0,state[t]-0.16);});return a;});
-document.getElementById('lazy').onclick=()=>run('lazy',()=>{let a=false;[['c7','c7t'],['x7','x7t']].forEach(([p,t])=>{if(state[t]>0){state[t]=Math.max(0,state[t]-0.22);a=true;}if(state[p]>0)state[p]=Math.max(0,state[p]-0.25);});return a;});
-document.getElementById('reset').onclick=()=>{stopAll();Object.assign(state,{c5:82,c5t:4,c7:95,c7t:5,x5:22,x5t:3.5,x7:88,x7t:2,rev:50});sync();};
+document.getElementById('burn').onclick=()=>run('burn',()=>{let a=false;if(state.c5>0){state.c5=Math.max(0,state.c5-3);a=true;}if(state.c5t>0)state.c5t=Math.max(0,state.c5t-0.08);return a;});
+document.getElementById('busy').onclick=()=>run('busy',()=>{let a=false;if(state.c7>0){state.c7=Math.max(0,state.c7-2.4);a=true;}if(state.c7t>0)state.c7t=Math.max(0,state.c7t-0.16);if(state.xw<100){state.xw=Math.min(100,state.xw+2.4);a=true;}if(state.xwt>0)state.xwt=Math.max(0,state.xwt-0.16);return a;});
+document.getElementById('lazy').onclick=()=>run('lazy',()=>{let a=false;if(state.c7t>0){state.c7t=Math.max(0,state.c7t-0.22);a=true;}if(state.c7>0)state.c7=Math.max(0,state.c7-0.25);if(state.xwt>0){state.xwt=Math.max(0,state.xwt-0.22);a=true;}if(state.xw<100)state.xw=Math.min(100,state.xw+0.25);return a;});
+document.getElementById('reset').onclick=()=>{stopAll();Object.assign(state,{c5:82,c5t:4,c7:95,c7t:5,xw:22,xwt:5.9,xcr:4,rev:50});sync();};
 </script>
 </body>
 </html>
