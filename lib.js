@@ -19,6 +19,18 @@ function fmtLong(seconds) {
   return fmtShort(seconds);
 }
 
+// Precise time-left for tooltips: "6d 14h", "4h 19m", or "12m".
+function fmtPrecise(seconds) {
+  if (seconds == null || seconds < 0) return "?";
+  const totalMinutes = Math.floor(seconds / 60);
+  const days = Math.floor(totalMinutes / 1440);
+  const hours = Math.floor((totalMinutes % 1440) / 60);
+  const minutes = totalMinutes % 60;
+  if (days >= 1) return hours > 0 ? `${days}d ${hours}h` : `${days}d`;
+  if (hours >= 1) return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
+  return `${minutes}m`;
+}
+
 // utilization header may be a 0..1 fraction or already a percentage -> percent USED
 function parseUtil(v) {
   if (v == null) return null;
@@ -119,18 +131,6 @@ function clockLong(resetSec, nowMs) {
     .replace(",", "");
 }
 
-// Additional Codex limits can report a full-window reset without ticking down in
-// lockstep with the primary window. Display and gate both stay hour-granular so
-// that sliding reset epochs don't look material while an untouched limit sits full.
-function clockLongCoarse(resetSec, nowMs) {
-  if (resetSec != null && resetSec <= 0) return "soon";
-  const d = resetClock(resetSec, nowMs);
-  if (!d) return "unknown";
-  return d
-    .toLocaleString(undefined, { weekday: "short", hour: "numeric" })
-    .replace(",", "");
-}
-
 function tooltipFor(name, five, seven, nowMs) {
   return (
     `${name}\n` +
@@ -164,12 +164,6 @@ function resetEpochMin(resetSec, nowMs) {
   if (resetSec == null) return "unknown";
   if (resetSec <= 0) return "soon"; // elapsed sentinel, matches clockShort/clockLong
   return Math.round((nowMs + resetSec * 1000) / 60000);
-}
-
-function resetEpochHour(resetSec, nowMs) {
-  if (resetSec == null) return "unknown";
-  if (resetSec <= 0) return "soon"; // elapsed sentinel, same as the minute gate
-  return Math.round((nowMs + resetSec * 1000) / 3600000);
 }
 
 function resetMoved(a, b) {
@@ -226,14 +220,9 @@ function parseCodexUsage(j, httpStatus) {
     };
   }
   if (!p || p.used_percent == null) return { error: `no quota windows (HTTP ${httpStatus})` };
-  const extra = Array.isArray(j.additional_rate_limits) ? j.additional_rate_limits[0] : null;
-  const ew = extra && extra.rate_limit && extra.rate_limit.primary_window;
   const rc = j.rate_limit_reset_credits;
   return {
     weekly: { rem: rem(p.used_percent), reset: p.reset_after_seconds, win: p.limit_window_seconds || WEEK },
-    spark: ew && ew.used_percent != null
-      ? { name: extra.limit_name || "Spark", rem: rem(ew.used_percent), reset: ew.reset_after_seconds }
-      : null,
     resets: rc && typeof rc.available_count === "number" ? rc.available_count : null,
   };
 }
@@ -286,16 +275,25 @@ function fmtSigned(d) {
   return r > 0 ? `+${r}` : r < 0 ? `−${Math.abs(r)}` : "±0"; // U+2212, house style
 }
 
+function fmtSignedPercent(d) {
+  const r = Math.round(d);
+  return r > 0 ? `+${r}%` : r < 0 ? `-${Math.abs(r)}%` : "0%";
+}
+
 // Bar segment after "{dot} Codex ": no 🗓 (a single limit needs no icon anchor).
-// Credits ride the pace glyph ("🔥4"); with no glyph they get ↺ so the count
-// doesn't float alone; 0/absent stays hidden.
+// Off-pace states include their delta directly (🔥−8 / 🧊+9). Reset credits stay
+// separate as ↺N so the two numbers cannot be confused.
 function codexSegment(rem, reset, win, tol, credits) {
   const base = `${rem == null ? "—" : rem + "%"} (${fmtLong(reset)})`;
   const st = paceState(rem, reset, win, tol);
-  const glyph = st === "hot" ? "🔥" : st === "cool" ? "🧊" : "";
-  const cr = credits != null && credits > 0 ? String(credits) : "";
-  if (glyph) return cr ? `${base} ${glyph}${cr}` : `${base} ${glyph}`;
-  return cr ? `${base} ↺${cr}` : base;
+  const delta = paceDelta(rem, reset, win);
+  const glyph = st === "hot"
+    ? `🔥${fmtSigned(delta)}`
+    : st === "cool"
+      ? `🧊${fmtSigned(delta)}`
+      : "";
+  const cr = credits != null && credits > 0 ? `↺${credits}` : "";
+  return [base, glyph, cr].filter(Boolean).join(" ");
 }
 
 // Weekly tooltip. Same stability contract as tooltipFor: minute-rounded absolute
@@ -304,15 +302,19 @@ function codexSegment(rem, reset, win, tol, credits) {
 function tooltipForCodexWeekly(name, d, nowMs, tol) {
   const w = d.weekly;
   const lines = [name];
-  const days = w.reset != null && w.reset >= 86400 ? ` (${fmtLong(w.reset)} left)` : "";
-  lines.push(`Weekly: ${w.rem == null ? "—" : w.rem + "% left"} · resets ${clockLong(w.reset, nowMs)}${days}`);
+  const timeLeft = w.reset == null ? "unknown" : `${fmtPrecise(w.reset)} left`;
+  lines.push(`Weekly: ${w.rem == null ? "—" : w.rem + "% left"} · resets ${clockLong(w.reset, nowMs)} · ${timeLeft}`);
   const st = paceState(w.rem, w.reset, w.win, tol);
   if (st != null) {
-    const sd = fmtSigned(paceDelta(w.rem, w.reset, w.win));
-    const line = Math.round(paceLine(w.reset, w.win));
+    const sd = fmtSignedPercent(paceDelta(w.rem, w.reset, w.win));
+    const target = Math.round(paceLine(w.reset, w.win));
     lines.push(st === "on"
-      ? `Pace: on track (${sd} vs even burn)`
-      : `${st === "hot" ? "🔥" : "🧊"} Pace: ${sd} vs even burn (on-pace ${line}%)`);
+      ? `Pace: on track (${sd}) · target ${target}% remaining now`
+      : `${st === "hot" ? "🔥" : "🧊"} Pace: ${sd} · target ${target}% remaining now`);
+  }
+  if (w.rem != null && w.reset != null && w.reset > 0) {
+    const budget = w.rem / (w.reset / 86400);
+    lines.push(`Budget: ${budget.toFixed(1)}%/day until reset`);
   }
   if (d.resets != null) {
     let line = `↺ Rate-limit resets available: ${d.resets}`;
@@ -322,7 +324,6 @@ function tooltipForCodexWeekly(name, d, nowMs, tol) {
     }
     lines.push(line);
   }
-  if (d.spark) lines.push(`⚡ Spark: ${d.spark.rem == null ? "—" : d.spark.rem + "% left"} · resets ${clockLongCoarse(d.spark.reset, nowMs)}`);
   return lines.join("\n");
 }
 
@@ -340,8 +341,7 @@ function nextTooltipWeekly(prev, name, d, nowMs, tol, driftPct = 5) {
         st: paceState(d.weekly.rem, d.weekly.reset, d.weekly.win, tol),
         resets: d.resets == null ? null : d.resets,
         expDays: d.resetsExpiry == null ? null : daysUntil(d.resetsExpiry, nowMs),
-        sparkRem: d.spark ? d.spark.rem : null,
-        sparkM: d.spark ? resetEpochHour(d.spark.reset, nowMs) : "none",
+        leftHour: d.weekly.reset == null ? null : Math.floor(d.weekly.reset / 3600),
       };
   let material;
   if (!prev) material = true;
@@ -360,8 +360,8 @@ function nextTooltipWeekly(prev, name, d, nowMs, tol, driftPct = 5) {
       // The nearest-expiry suffix is intentionally day-granular: a new expiry or
       // the daily countdown tick is material; minute-level clock churn is not.
       prev.expDays !== snap.expDays ||
-      resetMoved(prev.sparkM, snap.sparkM) ||
-      remDelta(prev.sparkRem, snap.sparkRem) >= driftPct;
+      // The precise "6d 14h left" suffix changes hourly, not every refresh.
+      prev.leftHour !== snap.leftHour;
   }
   if (!material) return null;
   const tooltip = d.error ? `${name}: ${d.error}` : tooltipForCodexWeekly(name, d, nowMs, tol);
@@ -369,7 +369,7 @@ function nextTooltipWeekly(prev, name, d, nowMs, tol, driftPct = 5) {
 }
 
 module.exports = {
-  fmtShort, fmtLong, parseUtil, parseResetHeader, accountFromJwt,
+  fmtShort, fmtLong, fmtPrecise, parseUtil, parseResetHeader, accountFromJwt,
   dotFor, paceLine, reveal5h, reveal7d, tooltipFor, nextTooltip,
   parseCodexUsage, parseCreditsDetail, fmtDateShort, daysUntil,
   paceDelta, paceState, fmtSigned, codexSegment,

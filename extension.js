@@ -303,6 +303,13 @@ function renderCodex(it, name, d, opt, nowMs = Date.now()) {
   it.color = colorFor(w.rem);
 }
 
+async function loadCodexData() {
+  const d = await fetchCodex();
+  if (d.weekly && d.resets > 0) d.resetsExpiry = await fetchCodexCreditsExpiry(d.resets);
+  else d.resetsExpiry = null;
+  return d;
+}
+
 async function refresh() {
   const cfg = vscode.workspace.getConfiguration("usageQuotaBar");
   const fiveFloor = cfg.get("fiveFloor", 50);
@@ -316,12 +323,7 @@ async function refresh() {
   if (cfg.get("showCodex", true)) {
     items.codex.show();
     const opt = { tol: cfg.get("paceTolerance", 5), fiveFloor };
-    try {
-      const d = await fetchCodex();
-      if (d.weekly && d.resets > 0) d.resetsExpiry = await fetchCodexCreditsExpiry(d.resets);
-      else d.resetsExpiry = null;
-      renderCodex(items.codex, "Codex", d, opt);
-    }
+    try { renderCodex(items.codex, "Codex", await loadCodexData(), opt); }
     catch (e) { renderCodex(items.codex, "Codex", { error: e.message }, opt); }
   } else items.codex.hide();
 }
@@ -338,7 +340,6 @@ function activate(context) {
   items.claude = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
   items.codex = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 99);
   for (const k of Object.keys(items)) {
-    items[k].command = "usageQuotaBar.refresh";
     items[k].text = "…";
     context.subscriptions.push(items[k]);
   }
@@ -357,4 +358,4 @@ function deactivate() { if (timer) clearInterval(timer); }
 module.exports = { activate, deactivate };
 // test hooks (VS Code only invokes activate/deactivate; exposing these is harmless and
 // lets the credential/refresh paths be exercised without a VS Code host).
-module.exports._internal = { readClaudeCreds, refreshClaudeToken, fetchClaude, parseClaudeCreds, renderProvider, fetchCodex, fetchCodexCreditsExpiry, renderCodex };
+module.exports._internal = { readClaudeCreds, refreshClaudeToken, fetchClaude, parseClaudeCreds, renderProvider, fetchCodex, fetchCodexCreditsExpiry, renderCodex, loadCodexData };
