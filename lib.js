@@ -328,9 +328,8 @@ function tooltipForCodexWeekly(name, d, nowMs, tol) {
 }
 
 // Weekly analogue of nextTooltip: same materiality machinery, weekly-only snapshot.
-// Extra material events: pace verdict flip, reset-credit count change, spark
-// appear/vanish/move/drift. Spark uses hour epochs to match clockLongCoarse:
-// untouched full-window limits slide by minutes, but real rollovers jump by days.
+// Extra material events include pace verdict flips, reset-credit changes, and the
+// hour-granular precise time-left suffix.
 function nextTooltipWeekly(prev, name, d, nowMs, tol, driftPct = 5) {
   const snap = d.error
     ? { error: String(d.error) }
