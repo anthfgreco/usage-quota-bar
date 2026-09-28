@@ -296,9 +296,7 @@ function codexSegment(rem, reset, win, tol, credits) {
   return [base, glyph, cr].filter(Boolean).join(" ");
 }
 
-// Weekly tooltip. Same stability contract as tooltipFor: minute-rounded absolute
-// clocks; the day-granular "(5d left)" suffix only appears at >= 1 day so the
-// string can't churn per-minute (rewrites are gated by nextTooltipWeekly anyway).
+// Weekly tooltip uses minute-rounded reset clocks and readable countdowns.
 function tooltipForCodexWeekly(name, d, nowMs, tol) {
   const w = d.weekly;
   const lines = [name];
@@ -327,44 +325,12 @@ function tooltipForCodexWeekly(name, d, nowMs, tol) {
   return lines.join("\n");
 }
 
-// Weekly analogue of nextTooltip: same materiality machinery, weekly-only snapshot.
-// Extra material events include pace verdict flips, reset-credit changes, and the
-// hour-granular precise time-left suffix.
-function nextTooltipWeekly(prev, name, d, nowMs, tol, driftPct = 5) {
-  const snap = d.error
-    ? { error: String(d.error) }
-    : {
-        error: null,
-        rem: d.weekly.rem,
-        m: resetEpochMin(d.weekly.reset, nowMs),
-        st: paceState(d.weekly.rem, d.weekly.reset, d.weekly.win, tol),
-        resets: d.resets == null ? null : d.resets,
-        expDays: d.resetsExpiry == null ? null : daysUntil(d.resetsExpiry, nowMs),
-        leftHour: d.weekly.reset == null ? null : Math.floor(d.weekly.reset / 3600),
-      };
-  let material;
-  if (!prev) material = true;
-  else if ((prev.error || null) !== (snap.error || null)) material = true;
-  else if (snap.error) material = false;
-  else {
-    // A ±1 rem wobble at the tolerance boundary can flip the displayed verdict
-    // every tick; require the new verdict to survive tol+1 before rewriting.
-    // A real trend crosses that band soon enough, and driftPct still cuts through.
-    material =
-      resetMoved(prev.m, snap.m) ||
-      remDelta(prev.rem, snap.rem) >= driftPct ||
-      (snap.st !== prev.st &&
-        paceState(d.weekly.rem, d.weekly.reset, d.weekly.win, tol + 1) === snap.st) ||
-      prev.resets !== snap.resets ||
-      // The nearest-expiry suffix is intentionally day-granular: a new expiry or
-      // the daily countdown tick is material; minute-level clock churn is not.
-      prev.expDays !== snap.expDays ||
-      // The precise "6d 14h left" suffix changes hourly, not every refresh.
-      prev.leftHour !== snap.leftHour;
-  }
-  if (!material) return null;
+// Keep weekly details in sync with the bar, including pace, budget and countdowns.
+// Only skip identical content: a drift threshold leaves newly opened hovers stale.
+function nextTooltipWeekly(prev, name, d, nowMs, tol) {
   const tooltip = d.error ? `${name}: ${d.error}` : tooltipForCodexWeekly(name, d, nowMs, tol);
-  return { tooltip, snap };
+  if (prev && prev.tooltip === tooltip) return null;
+  return { tooltip, snap: { tooltip } };
 }
 
 module.exports = {

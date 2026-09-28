@@ -44,11 +44,12 @@ function colorFor(rem) {
   return new vscode.ThemeColor("charts.green");
 }
 
-// tooltip writes are gated by L.nextTooltip — VS Code disposes an open hover whenever
+// Legacy tooltip writes are gated by L.nextTooltip — VS Code disposes an open hover whenever
 // the tooltip string changes (vscode#128887), so the string must be byte-stable across
 // refreshes (L.tooltipFor) AND only rewritten on material quota change (L.nextTooltip):
 // a provider under active use has genuine ~1%/min data churn that would otherwise
 // rewrite (and kill the hover) every tick. text/color updates are hover-safe.
+// Codex weekly details instead refresh on any displayed change to match the bar.
 
 // ---- credential readers --------------------------------------------------
 const CLAUDE_FILE = () => path.join(os.homedir(), ".claude", ".credentials.json");

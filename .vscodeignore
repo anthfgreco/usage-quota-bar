@@ -1,0 +1,6 @@
+docs/**
+test/**
+build-vsix.sh
+node_modules/**
+package-lock.json
+*.vsix

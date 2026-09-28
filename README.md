@@ -44,6 +44,11 @@ The default ±5 point tolerance still controls whether the status bar shows 🔥
 
 In VS Code: `Ctrl+Shift+P` → `Extensions: Install from VSIX…` → choose the built VSIX.
 
+## Build
+
+Run `npm install` once, then `npm run build:vsix`. This creates
+`usage-quota-bar-<version>.vsix` using the standard VS Code extension packager.
+
 ## Requirements
 
 - Claude Code credentials in the normal local location.

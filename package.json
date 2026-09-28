@@ -5,46 +5,83 @@
   "version": "1.2.2",
   "publisher": "achromichat",
   "license": "MIT",
-  "engines": { "vscode": "^1.74.0" },
-  "categories": ["Other"],
-  "keywords": ["claude", "codex", "usage", "quota", "rate limit", "status bar"],
-  "repository": { "type": "git", "url": "https://github.com/anthfgreco/usage-quota-bar.git" },
-  "bugs": { "url": "https://github.com/anthfgreco/usage-quota-bar/issues" },
+  "engines": {
+    "vscode": "^1.74.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "keywords": [
+    "claude",
+    "codex",
+    "usage",
+    "quota",
+    "rate limit",
+    "status bar"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/anthfgreco/usage-quota-bar.git"
+  },
+  "bugs": {
+    "url": "https://github.com/anthfgreco/usage-quota-bar/issues"
+  },
   "homepage": "https://github.com/anthfgreco/usage-quota-bar#readme",
-  "extensionKind": ["ui"],
-  "activationEvents": ["onStartupFinished"],
+  "extensionKind": [
+    "ui"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
   "main": "./extension.js",
   "scripts": {
-    "test": "node test/lib.test.js && node test/refresh.test.js && node test/codex.test.js"
+    "build:vsix": "vsce package --no-dependencies",
+    "test": "node test/tooltip-refresh.test.js && node test/lib.test.js && node test/refresh.test.js && node test/codex.test.js"
   },
   "contributes": {
     "commands": [
-      { "command": "usageQuotaBar.refresh", "title": "Usage Quota Bar: Refresh Now" }
+      {
+        "command": "usageQuotaBar.refresh",
+        "title": "Usage Quota Bar: Refresh Now"
+      }
     ],
     "configuration": {
       "title": "Usage Quota Bar",
       "properties": {
         "usageQuotaBar.refreshSeconds": {
-          "type": "number", "default": 60, "minimum": 15,
+          "type": "number",
+          "default": 60,
+          "minimum": 15,
           "description": "How often to refresh quota, in seconds."
         },
         "usageQuotaBar.fiveFloor": {
-          "type": "number", "default": 50, "minimum": 0, "maximum": 100,
+          "type": "number",
+          "default": 50,
+          "minimum": 0,
+          "maximum": 100,
           "description": "5h window reveals at/below this remaining %% (it also reveals earlier if you're burning faster than pace)."
         },
         "usageQuotaBar.paceTolerance": {
-          "type": "number", "default": 5, "minimum": 0, "maximum": 50,
+          "type": "number",
+          "default": 5,
+          "minimum": 0,
+          "maximum": 50,
           "description": "Codex weekly pace tolerance: ± this many points of the weekly limit counts as on-pace (no 🔥/🧊)."
         },
         "usageQuotaBar.showClaude": {
-          "type": "boolean", "default": true,
+          "type": "boolean",
+          "default": true,
           "description": "Show the Claude Code item."
         },
         "usageQuotaBar.showCodex": {
-          "type": "boolean", "default": true,
+          "type": "boolean",
+          "default": true,
           "description": "Show the Codex item."
         }
       }
     }
+  },
+  "devDependencies": {
+    "@vscode/vsce": "^4.0.0"
   }
 }
