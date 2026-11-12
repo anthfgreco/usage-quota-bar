@@ -183,7 +183,7 @@ eq("weekly-only null used -> error",
   L.parseCodexUsage({ rate_limit: { primary_window: {}, secondary_window: null } }, 500).error,
   "no quota windows (HTTP 500)");
 
-// pace verdicts — tol 5; window 604800
+// pace verdicts (7-day linear) — tol 5; window 604800
 eq("pace hot", L.paceState(78, 508511, 604800, 5), "hot");     // δ ≈ −6.08
 eq("pace on (exactly -tol)", L.paceState(79, 508032, 604800, 5), "on"); // line 84, δ = −5 exactly
 eq("pace cool", L.paceState(92, 129600, 604800, 5), "cool");   // line ≈ 21.4
@@ -193,7 +193,20 @@ eq("fmtSigned -6", L.fmtSigned(-6.08), "−6");
 eq("fmtSigned +41", L.fmtSigned(40.6), "+41");
 eq("fmtSigned zero", L.fmtSigned(0), "±0");
 
-// bar segment — no 🗓, credits after glyph, ↺ when on pace, hidden at 0
+// workweek helpers (Mon–Fri = 100%, Sat–Sun = 0%)
+const MON_NOON = new Date(2026, 6, 13, 12, 0, 0).getTime();
+eq("workdays left 4.5d", L.workdaySecondsLeft(508511, MON_NOON), 4.5 * 86400);
+eq("fmtWorkdays 4.5", L.fmtWorkdays(4.5 * 86400), "4.5 wd");
+eq("fmtWorkdays 1", L.fmtWorkdays(86400), "1 wd");
+eq("fmtWorkdays 0", L.fmtWorkdays(0), "0 wd");
+eq("workweek target 90%", Math.round(L.workweekPaceLine(508511, 604800, MON_NOON)), 90);
+const SAT_MORN = new Date(2026, 6, 18, 10, 0, 0).getTime();
+const SUN_EVE = new Date(2026, 6, 19, 18, 0, 0).getTime();
+const WED_NOON = new Date(2026, 6, 22, 12, 0, 0).getTime();
+eq("weekend freeze target Sat", Math.round(L.workweekPaceLine((WED_NOON - SAT_MORN) / 1000, 604800, SAT_MORN)), 50);
+eq("weekend freeze target Sun", Math.round(L.workweekPaceLine((WED_NOON - SUN_EVE) / 1000, 604800, SUN_EVE)), 50);
+
+// bar segment — 100% true 7-day math (no 🗓, credits after glyph, ↺ when on pace, hidden at 0)
 eq("segment hot+credits", L.codexSegment(78, 508511, 604800, 5, 4), "78% (5d) 🔥−6 ↺4");
 eq("segment hot no credits", L.codexSegment(78, 508511, 604800, 5, 0), "78% (5d) 🔥−6");
 eq("segment on pace w/ credits", L.codexSegment(55, 336960, 604800, 5, 4), "55% (3d) ↺4");
@@ -236,47 +249,53 @@ eq("redeemed credits excluded", red.nearestExpiry, Date.parse("2026-07-20T00:00:
 eq("empty credits detail", JSON.stringify(L.parseCreditsDetail({})), JSON.stringify({ count: 0, nearestExpiry: null }));
 eq("malformed credits detail", JSON.stringify(L.parseCreditsDetail(null)), JSON.stringify({ count: 0, nearestExpiry: null }));
 
-// weekly tooltip — shape and stability
+// weekly tooltip — shape, 7-day lines, and separate Workweek line
 const WD = { weekly: { rem: 78, reset: 508511, win: 604800 }, resets: 4 };
-const wt = L.tooltipForCodexWeekly("Codex", WD, T0, 5);
+const wt = L.tooltipForCodexWeekly("Codex", WD, MON_NOON, 5);
 eq("weekly tooltip first line", wt.split("\n")[0], "Codex");
 eq("weekly tooltip has weekly line", wt.includes("Weekly: 78% left · resets "), true);
 eq("weekly tooltip time left suffix", wt.includes("5d 21h left"), true);
-eq("weekly tooltip pace", wt.includes("🔥 Pace: -6% · target 84% remaining now"), true);
-eq("weekly tooltip budget", wt.includes("Budget: 13.3%/day until reset"), true);
+eq("weekly tooltip pace (7d)", wt.includes("🔥 Pace: -6% · target 84% remaining now"), true);
+eq("weekly tooltip budget (7d)", wt.includes("Budget: 13.3%/day until reset"), true);
+eq("weekly tooltip workweek line", wt.includes("Workweek (4.5 wd left): -12% · target 90% · 17.3%/wd"), true);
 eq("weekly tooltip resets", wt.includes("↺ Rate-limit resets available: 4"), true);
 eq("weekly tooltip no calendar icon", wt.includes("🗓"), false);
 eq("weekly tooltip no spark line", wt.includes("⚡"), false);
-const exp = T0 + 3.4 * 86400000;
-const wtExp = L.tooltipForCodexWeekly("Codex", { ...WD, resetsExpiry: exp }, T0, 5);
+const exp = MON_NOON + 3.4 * 86400000;
+const wtExp = L.tooltipForCodexWeekly("Codex", { ...WD, resetsExpiry: exp }, MON_NOON, 5);
 eq("weekly tooltip appends nearest expiry",
-  wtExp.includes(`↺ Rate-limit resets available: 4 · nearest expires ${L.fmtDateShort(exp)} (${L.daysUntil(exp, T0)}d)`), true);
-const wtNoExp = L.tooltipForCodexWeekly("Codex", WD, T0, 5);
+  wtExp.includes(`↺ Rate-limit resets available: 4 · nearest expires ${L.fmtDateShort(exp)} (${L.daysUntil(exp, MON_NOON)}d)`), true);
+const wtNoExp = L.tooltipForCodexWeekly("Codex", WD, MON_NOON, 5);
 eq("weekly tooltip without expiry unchanged", wtNoExp.includes("↺ Rate-limit resets available: 4"), true);
 eq("weekly tooltip without expiry has no nearest", wtNoExp.includes("nearest expires"), false);
 // on-pace copy, no resets lines when absent
 const wtOn = L.tooltipForCodexWeekly("Codex",
-  { weekly: { rem: 55, reset: 336960, win: 604800 }, resets: null }, T0, 5);
+  { weekly: { rem: 55, reset: 336960, win: 604800 }, resets: null }, MON_NOON, 5);
 eq("on-pace copy", wtOn.includes("Pace: on track ("), true);
 eq("no resets line when null", wtOn.includes("↺"), false);
 eq("no spark line when null", wtOn.includes("⚡"), false);
 
+// weekend reset fallback (0 wd left before Sunday reset)
+const wtWeekend = L.tooltipForCodexWeekly("Codex",
+  { weekly: { rem: 18, reset: 36000, win: 604800 }, resets: null }, SAT_MORN, 5);
+eq("weekend 0 wd workweek line", wtWeekend.includes("Workweek (0 wd left): +18% · target 0% · weekend bonus"), true);
+
 // weekly rewrite gate
-const gw1 = L.nextTooltipWeekly(null, "Codex", WD, T0, 5);
+const gw1 = L.nextTooltipWeekly(null, "Codex", WD, MON_NOON, 5);
 eq("weekly gate first render commits", gw1 !== null, true);
 eq("weekly gate tooltip matches builder", gw1.tooltip, wt);
-eq("identical weekly data does not rewrite", L.nextTooltipWeekly(gw1.snap, "Codex", WD, T0, 5), null);
+eq("identical weekly data does not rewrite", L.nextTooltipWeekly(gw1.snap, "Codex", WD, MON_NOON, 5), null);
 eq("weekly rem change rewrites", L.nextTooltipWeekly(gw1.snap, "Codex",
-  { ...WD, weekly: { rem: 77, reset: 508511, win: 604800 } }, T0, 5) !== null, true);
+  { ...WD, weekly: { rem: 77, reset: 508511, win: 604800 } }, MON_NOON, 5) !== null, true);
 eq("credits change rewrites", L.nextTooltipWeekly(gw1.snap, "Codex",
-  { ...WD, resets: 3 }, T0, 5) !== null, true);
+  { ...WD, resets: 3 }, MON_NOON, 5) !== null, true);
 // error flip both ways, frozen while persisting
-const gwE = L.nextTooltipWeekly(gw1.snap, "Codex", { error: "no Codex credentials found" }, T0, 5);
+const gwE = L.nextTooltipWeekly(gw1.snap, "Codex", { error: "no Codex credentials found" }, MON_NOON, 5);
 eq("weekly error rewrites", gwE !== null, true);
 eq("weekly error text", gwE.tooltip, "Codex: no Codex credentials found");
 eq("weekly same error frozen", L.nextTooltipWeekly(gwE.snap, "Codex",
-  { error: "no Codex credentials found" }, T0 + 62000, 5), null);
-eq("weekly error clear rewrites", L.nextTooltipWeekly(gwE.snap, "Codex", WD, T0, 5) !== null, true);
+  { error: "no Codex credentials found" }, MON_NOON + 62000, 5), null);
+eq("weekly error clear rewrites", L.nextTooltipWeekly(gwE.snap, "Codex", WD, MON_NOON, 5) !== null, true);
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

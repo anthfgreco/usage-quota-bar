@@ -38,6 +38,8 @@ on_pace_remaining = (time_left_seconds / window_seconds) × 100
 δ = actual_remaining − on_pace_remaining
 ```
 
+- **Status Bar (7-day)**: Uses straight-line 7-day pacing so the percentage, `(Xd)` countdown, and `🔥`/`🧊` delta all share the same 7-day clock.
+- **Tooltip Workweek Line (Mon–Fri)**: Adds a separate Mon–Fri lens (`5 workdays = 100%`, `0%` expected burn on Sat/Sun) showing remaining workdays, workweek delta/target, and `%/wd` allowance.
 - **Tolerance**: Configured via `usageQuotaBar.paceTolerance` (default: `5` points).
 - **Verdicts**:
   - `δ < −tol`: Hot (`🔥`)
@@ -52,10 +54,11 @@ on_pace_remaining = (time_left_seconds / window_seconds) × 100
 
 ```text
 Codex
-Weekly: 78% left · resets Mon 9:12 AM (5d left)
-🔥 Pace: −6 vs even burn (on-pace 84%)
+Weekly: 78% left · resets Sun 9:15 AM · 5d 21h left
+🔥 Pace: -6% · target 84% remaining now
+Budget: 13.3%/day until reset
+Workweek (4.5 wd left): -12% · target 90% · 17.3%/wd
 ↺ Rate-limit resets available: 4 · nearest expires Jul 18 (4d)
-⚡ Spark: 100% left · resets Tue 10:16 AM
 ```
 
 ### Hover-Stability Contract

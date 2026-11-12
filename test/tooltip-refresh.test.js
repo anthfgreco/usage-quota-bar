@@ -33,6 +33,7 @@ for (const rem of [82, 81, 80, 79]) {
 }
 assert.ok(item.tooltip.includes("Budget: 14.2%/day"));
 assert.ok(item.tooltip.includes("Pace: on track (0%)"));
+assert.ok(item.tooltip.includes("Workweek ("));
 
 // Time-derived content must refresh even without a change in remaining quota.
 const later = { ...data, weekly: { ...data.weekly, rem: 79, reset: 476400 } };

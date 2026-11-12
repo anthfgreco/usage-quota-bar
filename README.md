@@ -8,8 +8,8 @@ This fork keeps the original lightweight behavior but makes Codex pacing easier 
 - Pace delta is shown as a signed percentage, e.g. `+2%` or `-8%`.
 - Off-pace status-bar states include the delta directly, e.g. `🔥−8` / `🧊+9`.
 - Hover shows precise time left, e.g. `6d 14h left`, while the status bar stays compact at `(6d)`.
-- Hover shows the current target remaining percentage.
-- Hover shows the sustainable remaining budget in `%/day` until reset.
+- Hover shows the current 7-day target remaining percentage and `%/day` budget.
+- Hover includes a separate Mon–Fri `Workweek` line showing workdays left, workweek delta/target (`0%` expected weekend burn), and `%/wd` allowance.
 - The status-bar item is hover-only; use the command palette to refresh manually if needed.
 - Reset credits stay separate as `↺N`.
 
@@ -28,10 +28,11 @@ Codex
 Weekly: 96% left · resets Thu 12:47 PM · 6d 14h left
 Pace: on track (+2%) · target 94% remaining now
 Budget: 14.9%/day until reset
+Workweek (4.6 wd left): +4% · target 92% · 20.9%/wd
 ↺ Rate-limit resets available: 1 · nearest expires Oct 22 (28d)
 ```
 
-Pace remains the original straight-line 7-day calculation:
+Status-bar pace remains the straight-line 7-day calculation (`on-pace remaining = time left / window * 100`), while the tooltip adds a Mon–Fri workweek breakdown (`workdays left / workdays in window * 100`):
 
 ```text
 on-pace remaining = time left / window * 100

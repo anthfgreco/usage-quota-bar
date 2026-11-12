@@ -254,7 +254,49 @@ function daysUntil(epochMs, nowMs) {
   return Math.ceil((epochMs - nowMs) / 86400000);
 }
 
-// δ = remaining − on-pace remaining. Negative -> burning faster than even pace.
+// Seconds falling on Monday..Friday (local time, getDay() 1..5) in [startMs, endMs].
+function workdaySecondsBetween(startMs, endMs) {
+  if (startMs == null || endMs == null || endMs <= startMs) return 0;
+  let totalSec = 0;
+  let cur = startMs;
+  while (cur < endMs) {
+    const d = new Date(cur);
+    const nextMidnight = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1).getTime();
+    const segEnd = Math.min(endMs, nextMidnight);
+    const dow = d.getDay();
+    if (dow >= 1 && dow <= 5) {
+      totalSec += (segEnd - cur) / 1000;
+    }
+    cur = segEnd > cur ? segEnd : cur + 86400000;
+  }
+  return totalSec;
+}
+
+function workdaySecondsLeft(resetSec, nowMs = Date.now()) {
+  if (resetSec == null || resetSec <= 0) return 0;
+  return workdaySecondsBetween(nowMs, nowMs + resetSec * 1000);
+}
+
+function fmtWorkdays(wdSec) {
+  if (wdSec == null || wdSec < 0) return "?";
+  if (wdSec === 0) return "0 wd";
+  const wd = Math.max(0.1, wdSec / 86400);
+  return `${wd.toFixed(1).replace(/\.0$/, "")} wd`;
+}
+
+// "on-pace" remaining % across Mon–Fri workdays in the weekly window (0% expected burn on Sat/Sun).
+function workweekPaceLine(timeLeftSec, windowSec, nowMs = Date.now()) {
+  if (!windowSec || windowSec <= 0 || timeLeftSec == null) return null;
+  const clampedLeft = Math.max(0, timeLeftSec);
+  const endMs = nowMs + clampedLeft * 1000;
+  const winStartMs = endMs - windowSec * 1000;
+  const totalWdSec = workdaySecondsBetween(winStartMs, endMs);
+  if (totalWdSec <= 0) return paceLine(timeLeftSec, windowSec);
+  const remWdSec = workdaySecondsBetween(nowMs, endMs);
+  return Math.max(0, Math.min(100, (remWdSec / totalWdSec) * 100));
+}
+
+// δ = remaining − on-pace remaining (7-day linear). Negative -> burning faster than even pace.
 function paceDelta(rem, timeLeftSec, windowSec) {
   const line = paceLine(timeLeftSec, windowSec);
   if (rem == null || line == null) return null;
@@ -313,6 +355,16 @@ function tooltipForCodexWeekly(name, d, nowMs, tol) {
   if (w.rem != null && w.reset != null && w.reset > 0) {
     const budget = w.rem / (w.reset / 86400);
     lines.push(`Budget: ${budget.toFixed(1)}%/day until reset`);
+    const wdSec = workdaySecondsLeft(w.reset, nowMs);
+    const wdLine = workweekPaceLine(w.reset, w.win, nowMs);
+    if (wdLine != null) {
+      const wdSd = fmtSignedPercent(w.rem - wdLine);
+      const wdTarget = Math.round(wdLine);
+      const wdAllowance = wdSec > 0
+        ? `${(w.rem / (wdSec / 86400)).toFixed(1)}%/wd`
+        : "weekend bonus";
+      lines.push(`Workweek (${fmtWorkdays(wdSec)} left): ${wdSd} · target ${wdTarget}% · ${wdAllowance}`);
+    }
   }
   if (d.resets != null) {
     let line = `↺ Rate-limit resets available: ${d.resets}`;
@@ -337,6 +389,7 @@ module.exports = {
   fmtShort, fmtLong, fmtPrecise, parseUtil, parseResetHeader, accountFromJwt,
   dotFor, paceLine, reveal5h, reveal7d, tooltipFor, nextTooltip,
   parseCodexUsage, parseCreditsDetail, fmtDateShort, daysUntil,
+  workdaySecondsBetween, workdaySecondsLeft, fmtWorkdays, workweekPaceLine,
   paceDelta, paceState, fmtSigned, codexSegment,
   tooltipForCodexWeekly, nextTooltipWeekly,
 };

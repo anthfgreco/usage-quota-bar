@@ -80,7 +80,7 @@ const I = ext._internal;
   d.resetsExpiry = await I.fetchCodexCreditsExpiry(d.resets);
   const again = await I.fetchCodexCreditsExpiry(d.resets);
   const item = {};
-  const T0 = 1700000000000;
+  const T0 = new Date(2026, 6, 13, 12, 0, 0).getTime();
   I.renderCodex(item, "Codex", d, { tol: 5, fiveFloor: 50 }, T0);
 
   const checks = [
@@ -96,7 +96,8 @@ const I = ext._internal;
     ["item color green", item.color && item.color.id === "charts.green"],
     ["tooltip committed", typeof item.tooltip === "string" && item.tooltip.startsWith("Codex\n")],
     ["tooltip pace line", item.tooltip.includes("🔥 Pace: -6% · target 84% remaining now")],
-    ["tooltip budget line", item.tooltip.includes("Budget:")],
+    ["tooltip budget line", item.tooltip.includes("Budget: 13.3%/day until reset")],
+    ["tooltip workweek line", item.tooltip.includes("Workweek (4.5 wd left): -12% · target 90% · 17.3%/wd")],
     ["tooltip resets line", item.tooltip.includes("↺ Rate-limit resets available: 4")],
     ["tooltip nearest expiry", item.tooltip.includes("nearest expires")],
     ["no spark line in tooltip", !item.tooltip.includes("⚡")],
