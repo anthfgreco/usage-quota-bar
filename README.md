@@ -24,12 +24,10 @@ Example status bar:
 Example tooltip:
 
 ```text
-Codex
-Weekly: 96% left · resets Thu 12:47 PM · 6d 14h left
-Pace: on track (+2%) · target 94% remaining now
-Budget: 14.9%/day until reset
-Workweek (4.6 wd left): +4% · target 92% · 20.9%/wd
-↺ Rate-limit resets available: 1 · nearest expires Oct 22 (28d)
+Codex — 38% left (resets Fri 6:20 PM)
+7-day (1d 21h left): 🧊 +11% vs 27% target · 19.9%/day
+Mon–Fri (1.9 wd left): on track (0%) vs 38% target · 19.9%/wd
+↺ 2 resets available · nearest expires Nov 30 (19d)
 ```
 
 Status-bar pace remains the straight-line 7-day calculation (`on-pace remaining = time left / window * 100`), while the tooltip adds a Mon–Fri workweek breakdown (`workdays left / workdays in window * 100`):

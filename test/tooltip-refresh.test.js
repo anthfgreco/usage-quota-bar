@@ -28,17 +28,17 @@ for (const rem of [82, 81, 80, 79]) {
   const fresh = { ...data, weekly: { ...data.weekly, rem } };
   renderCodex(item, "Codex", fresh, opt, now);
   assert.ok(item.text.includes(`${rem}%`));
-  assert.ok(item.tooltip.includes(`Weekly: ${rem}% left`));
+  assert.ok(item.tooltip.includes(`Codex — ${rem}% left`));
   assert.equal(item.tooltip, L.tooltipForCodexWeekly("Codex", fresh, now, opt.tol));
 }
-assert.ok(item.tooltip.includes("Budget: 14.2%/day"));
-assert.ok(item.tooltip.includes("Pace: on track (0%)"));
-assert.ok(item.tooltip.includes("Workweek ("));
+assert.ok(item.tooltip.includes("14.2%/day"));
+assert.ok(item.tooltip.includes("on track (0%) vs 79% target"));
+assert.ok(item.tooltip.includes("Mon–Fri ("));
 
 // Time-derived content must refresh even without a change in remaining quota.
 const later = { ...data, weekly: { ...data.weekly, rem: 79, reset: 476400 } };
 renderCodex(item, "Codex", later, opt, now + 3600000);
-assert.ok(item.tooltip.includes("Budget: 14.3%/day"));
+assert.ok(item.tooltip.includes("14.3%/day"));
 const short = { ...data, weekly: { rem: 1, reset: 1800, win: 604800 } };
 renderCodex(item, "Codex", short, opt, now);
 renderCodex(item, "Codex", { ...short, weekly: { ...short.weekly, reset: 1740 } }, opt, now + 60000);
@@ -50,5 +50,5 @@ const errorWrites = writes;
 renderCodex(item, "Codex", { error: "offline" }, opt, now + 60000);
 assert.equal(writes, errorWrites);
 renderCodex(item, "Codex", data, opt, now);
-assert.ok(item.tooltip.includes("Weekly: 83% left"));
+assert.ok(item.tooltip.includes("Codex — 83% left"));
 console.log("Tooltip refresh regression checks passed");

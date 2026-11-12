@@ -249,36 +249,60 @@ eq("redeemed credits excluded", red.nearestExpiry, Date.parse("2026-07-20T00:00:
 eq("empty credits detail", JSON.stringify(L.parseCreditsDetail({})), JSON.stringify({ count: 0, nearestExpiry: null }));
 eq("malformed credits detail", JSON.stringify(L.parseCreditsDetail(null)), JSON.stringify({ count: 0, nearestExpiry: null }));
 
-// weekly tooltip — shape, 7-day lines, and separate Workweek line
+// weekly tooltip — Option 1 parallel layout (header + 7-day + Mon–Fri + resets)
 const WD = { weekly: { rem: 78, reset: 508511, win: 604800 }, resets: 4 };
 const wt = L.tooltipForCodexWeekly("Codex", WD, MON_NOON, 5);
-eq("weekly tooltip first line", wt.split("\n")[0], "Codex");
-eq("weekly tooltip has weekly line", wt.includes("Weekly: 78% left · resets "), true);
-eq("weekly tooltip time left suffix", wt.includes("5d 21h left"), true);
-eq("weekly tooltip pace (7d)", wt.includes("🔥 Pace: -6% · target 84% remaining now"), true);
-eq("weekly tooltip budget (7d)", wt.includes("Budget: 13.3%/day until reset"), true);
-eq("weekly tooltip workweek line", wt.includes("Workweek (4.5 wd left): -12% · target 90% · 17.3%/wd"), true);
-eq("weekly tooltip resets", wt.includes("↺ Rate-limit resets available: 4"), true);
+eq("weekly tooltip header line", wt.split("\n")[0].startsWith("Codex — 78% left (resets "), true);
+eq("weekly tooltip 7-day row", wt.includes("7-day (5d 21h left): 🔥 -6% vs 84% target · 13.3%/day"), true);
+eq("weekly tooltip Mon-Fri row", wt.includes("Mon–Fri (4.5 wd left): 🔥 -12% vs 90% target · 17.3%/wd"), true);
+eq("weekly tooltip resets", wt.includes("↺ 4 resets available"), true);
+eq("weekly tooltip singular reset",
+  L.tooltipForCodexWeekly("Codex", { ...WD, resets: 1 }, MON_NOON, 5).includes("↺ 1 reset available"), true);
 eq("weekly tooltip no calendar icon", wt.includes("🗓"), false);
 eq("weekly tooltip no spark line", wt.includes("⚡"), false);
 const exp = MON_NOON + 3.4 * 86400000;
 const wtExp = L.tooltipForCodexWeekly("Codex", { ...WD, resetsExpiry: exp }, MON_NOON, 5);
 eq("weekly tooltip appends nearest expiry",
-  wtExp.includes(`↺ Rate-limit resets available: 4 · nearest expires ${L.fmtDateShort(exp)} (${L.daysUntil(exp, MON_NOON)}d)`), true);
+  wtExp.includes(`↺ 4 resets available · nearest expires ${L.fmtDateShort(exp)} (${L.daysUntil(exp, MON_NOON)}d)`), true);
 const wtNoExp = L.tooltipForCodexWeekly("Codex", WD, MON_NOON, 5);
-eq("weekly tooltip without expiry unchanged", wtNoExp.includes("↺ Rate-limit resets available: 4"), true);
+eq("weekly tooltip without expiry unchanged", wtNoExp.includes("↺ 4 resets available"), true);
 eq("weekly tooltip without expiry has no nearest", wtNoExp.includes("nearest expires"), false);
 // on-pace copy, no resets lines when absent
 const wtOn = L.tooltipForCodexWeekly("Codex",
   { weekly: { rem: 55, reset: 336960, win: 604800 }, resets: null }, MON_NOON, 5);
-eq("on-pace copy", wtOn.includes("Pace: on track ("), true);
+eq("on-pace copy", wtOn.includes("on track ("), true);
 eq("no resets line when null", wtOn.includes("↺"), false);
 eq("no spark line when null", wtOn.includes("⚡"), false);
 
 // weekend reset fallback (0 wd left before Sunday reset)
 const wtWeekend = L.tooltipForCodexWeekly("Codex",
   { weekly: { rem: 18, reset: 36000, win: 604800 }, resets: null }, SAT_MORN, 5);
-eq("weekend 0 wd workweek line", wtWeekend.includes("Workweek (0 wd left): +18% · target 0% · weekend bonus"), true);
+eq("weekend 0 wd workweek line", wtWeekend.includes("Mon–Fri (0 wd left): 🧊 +18% vs 0% target · weekend bonus"), true);
+
+// 0% pace delta cases (exact 0%, fractional ±0.4% rounding to 0%, 7d cool + Mon-Fri 0%, and 0% remaining quota)
+const wtWdZero = L.tooltipForCodexWeekly("Codex",
+  { weekly: { rem: 90, reset: 508511, win: 604800 }, resets: null }, MON_NOON, 5);
+eq("workweek exact 0% delta", wtWdZero.includes("Mon–Fri (4.5 wd left): on track (0%) vs 90% target · 20.0%/wd"), true);
+
+// Wed 8:25 PM -> Fri 6:20 PM (1d 21h 55m = 165300s, 1.91 wd): 7-day is +11% cool (target 27%), Mon–Fri is 0% on track (target 38%)
+const WED_EVE = new Date(2026, 10, 11, 20, 25, 0).getTime();
+const wtWed = L.tooltipForCodexWeekly("Codex",
+  { weekly: { rem: 38, reset: 165300, win: 604800 }, resets: 2 }, WED_EVE, 5);
+eq("Wed->Fri 7d cool +11%", wtWed.includes("7-day (1d 21h left): 🧊 +11% vs 27% target · 19.9%/day"), true);
+eq("Wed->Fri Mon-Fri 0% on track (fractional -0.26% rounds to 0%)",
+  wtWed.includes("Mon–Fri (1.9 wd left): on track (0%) vs 38% target · 19.9%/wd"), true);
+
+// Exact 0% on 7-day AND Mon–Fri simultaneously (50% left at midpoint: Wed 12:00 -> Sat 00:00 has 3.5d / 2.5wd when window resets Fri 24:00)
+const wt7dZero = L.tooltipForCodexWeekly("Codex",
+  { weekly: { rem: 50, reset: 302400, win: 604800 }, resets: null }, MON_NOON, 5);
+eq("7-day exact 0% delta", wt7dZero.includes("7-day (3d 12h left): on track (0%) vs 50% target · 14.3%/day"), true);
+
+// 0% remaining quota (exhausted)
+const wtRemZero = L.tooltipForCodexWeekly("Codex",
+  { weekly: { rem: 0, reset: 165300, win: 604800 }, resets: 1 }, WED_EVE, 5);
+eq("0% remaining header", wtRemZero.split("\n")[0].startsWith("Codex — 0% left (resets "), true);
+eq("0% remaining 7-day row", wtRemZero.includes("7-day (1d 21h left): 🔥 -27% vs 27% target · 0.0%/day"), true);
+eq("0% remaining Mon-Fri row", wtRemZero.includes("Mon–Fri (1.9 wd left): 🔥 -38% vs 38% target · 0.0%/wd"), true);
 
 // weekly rewrite gate
 const gw1 = L.nextTooltipWeekly(null, "Codex", WD, MON_NOON, 5);

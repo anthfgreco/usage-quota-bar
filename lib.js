@@ -322,6 +322,13 @@ function fmtSignedPercent(d) {
   return r > 0 ? `+${r}%` : r < 0 ? `-${Math.abs(r)}%` : "0%";
 }
 
+function fmtPaceVerdict(delta, tol) {
+  const sd = fmtSignedPercent(delta);
+  if (delta < -tol) return `🔥 ${sd}`;
+  if (delta > tol) return `🧊 ${sd}`;
+  return `on track (${sd})`;
+}
+
 // Bar segment after "{dot} Codex ": no 🗓 (a single limit needs no icon anchor).
 // Off-pace states include their delta directly (🔥−8 / 🧊+9). Reset credits stay
 // separate as ↺N so the two numbers cannot be confused.
@@ -338,36 +345,36 @@ function codexSegment(rem, reset, win, tol, credits) {
   return [base, glyph, cr].filter(Boolean).join(" ");
 }
 
-// Weekly tooltip uses minute-rounded reset clocks and readable countdowns.
+// Weekly tooltip uses minute-rounded reset clocks and parallel 7-day / Mon–Fri rows.
 function tooltipForCodexWeekly(name, d, nowMs, tol) {
   const w = d.weekly;
-  const lines = [name];
+  const remText = w.rem == null ? "—" : `${w.rem}% left`;
+  const lines = [`${name} — ${remText} (resets ${clockLong(w.reset, nowMs)})`];
   const timeLeft = w.reset == null ? "unknown" : `${fmtPrecise(w.reset)} left`;
-  lines.push(`Weekly: ${w.rem == null ? "—" : w.rem + "% left"} · resets ${clockLong(w.reset, nowMs)} · ${timeLeft}`);
-  const st = paceState(w.rem, w.reset, w.win, tol);
-  if (st != null) {
-    const sd = fmtSignedPercent(paceDelta(w.rem, w.reset, w.win));
-    const target = Math.round(paceLine(w.reset, w.win));
-    lines.push(st === "on"
-      ? `Pace: on track (${sd}) · target ${target}% remaining now`
-      : `${st === "hot" ? "🔥" : "🧊"} Pace: ${sd} · target ${target}% remaining now`);
+  const line7 = paceLine(w.reset, w.win);
+  if (w.rem != null && line7 != null) {
+    const verdict7 = fmtPaceVerdict(w.rem - line7, tol);
+    const target7 = Math.round(line7);
+    const budget7 = w.reset != null && w.reset > 0
+      ? ` · ${(w.rem / (w.reset / 86400)).toFixed(1)}%/day`
+      : "";
+    lines.push(`7-day (${timeLeft}): ${verdict7} vs ${target7}% target${budget7}`);
   }
   if (w.rem != null && w.reset != null && w.reset > 0) {
-    const budget = w.rem / (w.reset / 86400);
-    lines.push(`Budget: ${budget.toFixed(1)}%/day until reset`);
     const wdSec = workdaySecondsLeft(w.reset, nowMs);
     const wdLine = workweekPaceLine(w.reset, w.win, nowMs);
     if (wdLine != null) {
-      const wdSd = fmtSignedPercent(w.rem - wdLine);
-      const wdTarget = Math.round(wdLine);
+      const verdictWd = fmtPaceVerdict(w.rem - wdLine, tol);
+      const targetWd = Math.round(wdLine);
       const wdAllowance = wdSec > 0
         ? `${(w.rem / (wdSec / 86400)).toFixed(1)}%/wd`
         : "weekend bonus";
-      lines.push(`Workweek (${fmtWorkdays(wdSec)} left): ${wdSd} · target ${wdTarget}% · ${wdAllowance}`);
+      lines.push(`Mon–Fri (${fmtWorkdays(wdSec)} left): ${verdictWd} vs ${targetWd}% target · ${wdAllowance}`);
     }
   }
   if (d.resets != null) {
-    let line = `↺ Rate-limit resets available: ${d.resets}`;
+    const noun = d.resets === 1 ? "reset" : "resets";
+    let line = `↺ ${d.resets} ${noun} available`;
     if (d.resetsExpiry != null && d.resets > 0) {
       const dd = daysUntil(d.resetsExpiry, nowMs);
       if (dd > 0) line += ` · nearest expires ${fmtDateShort(d.resetsExpiry)} (${dd}d)`;
