@@ -164,7 +164,6 @@ const pw = L.parseCodexUsage(WEEKLY_JSON, 200);
 eq("parse weekly rem", pw.weekly.rem, 78);
 eq("parse weekly reset", pw.weekly.reset, 508511);
 eq("parse weekly win", pw.weekly.win, 604800);
-eq("parse spark rem", pw.spark.rem, 100);
 eq("parse resets", pw.resets, 4);
 eq("parse weekly has no five", pw.five === undefined, true);
 
@@ -195,11 +194,11 @@ eq("fmtSigned +41", L.fmtSigned(40.6), "+41");
 eq("fmtSigned zero", L.fmtSigned(0), "±0");
 
 // bar segment — no 🗓, credits after glyph, ↺ when on pace, hidden at 0
-eq("segment hot+credits", L.codexSegment(78, 508511, 604800, 5, 4), "78% (5d) 🔥4");
-eq("segment hot no credits", L.codexSegment(78, 508511, 604800, 5, 0), "78% (5d) 🔥");
+eq("segment hot+credits", L.codexSegment(78, 508511, 604800, 5, 4), "78% (5d) 🔥−6 ↺4");
+eq("segment hot no credits", L.codexSegment(78, 508511, 604800, 5, 0), "78% (5d) 🔥−6");
 eq("segment on pace w/ credits", L.codexSegment(55, 336960, 604800, 5, 4), "55% (3d) ↺4");
 eq("segment on pace bare", L.codexSegment(55, 336960, 604800, 5, null), "55% (3d)");
-eq("segment cool", L.codexSegment(92, 129600, 604800, 5, 4), "92% (1d) 🧊4");
+eq("segment cool", L.codexSegment(92, 129600, 604800, 5, 4), "92% (1d) 🧊+71 ↺4");
 eq("segment unknown rem", L.codexSegment(null, null, 604800, 5, null), "— (?)");
 
 // reset-credit details: nearest expiry among available credits only
@@ -238,32 +237,26 @@ eq("empty credits detail", JSON.stringify(L.parseCreditsDetail({})), JSON.string
 eq("malformed credits detail", JSON.stringify(L.parseCreditsDetail(null)), JSON.stringify({ count: 0, nearestExpiry: null }));
 
 // weekly tooltip — shape and stability
-const WD = { weekly: { rem: 78, reset: 508511, win: 604800 },
-             spark: { name: "GPT-5.3-Codex-Spark", rem: 100, reset: 604800 }, resets: 4 };
+const WD = { weekly: { rem: 78, reset: 508511, win: 604800 }, resets: 4 };
 const wt = L.tooltipForCodexWeekly("Codex", WD, T0, 5);
 eq("weekly tooltip first line", wt.split("\n")[0], "Codex");
 eq("weekly tooltip has weekly line", wt.includes("Weekly: 78% left · resets "), true);
-eq("weekly tooltip day suffix", wt.includes("(5d left)"), true);
-eq("weekly tooltip pace", wt.includes("🔥 Pace: −6 vs even burn (on-pace 84%)"), true);
+eq("weekly tooltip time left suffix", wt.includes("5d 21h left"), true);
+eq("weekly tooltip pace", wt.includes("🔥 Pace: -6% · target 84% remaining now"), true);
+eq("weekly tooltip budget", wt.includes("Budget: 13.3%/day until reset"), true);
 eq("weekly tooltip resets", wt.includes("↺ Rate-limit resets available: 4"), true);
-eq("weekly tooltip spark", wt.includes("⚡ Spark: 100% left · resets "), true);
 eq("weekly tooltip no calendar icon", wt.includes("🗓"), false);
+eq("weekly tooltip no spark line", wt.includes("⚡"), false);
 const exp = T0 + 3.4 * 86400000;
 const wtExp = L.tooltipForCodexWeekly("Codex", { ...WD, resetsExpiry: exp }, T0, 5);
 eq("weekly tooltip appends nearest expiry",
   wtExp.includes(`↺ Rate-limit resets available: 4 · nearest expires ${L.fmtDateShort(exp)} (${L.daysUntil(exp, T0)}d)`), true);
 const wtNoExp = L.tooltipForCodexWeekly("Codex", WD, T0, 5);
-eq("weekly tooltip without expiry unchanged", wtNoExp.includes("↺ Rate-limit resets available: 4\n"), true);
+eq("weekly tooltip without expiry unchanged", wtNoExp.includes("↺ Rate-limit resets available: 4"), true);
 eq("weekly tooltip without expiry has no nearest", wtNoExp.includes("nearest expires"), false);
-// byte-stable across one refresh tick (same quota, ~60s lower reset + API jitter;
-// −58 not −62: keeps the reset epoch inside the same rounded minute — boundary
-// wobble is the gate's job, not the builder's)
-const wt2 = L.tooltipForCodexWeekly("Codex",
-  { ...WD, weekly: { rem: 78, reset: 508511 - 58, win: 604800 } }, T0 + 60000, 5);
-eq("weekly tooltip stable across tick", wt, wt2);
-// on-pace copy, no spark/resets lines when absent
+// on-pace copy, no resets lines when absent
 const wtOn = L.tooltipForCodexWeekly("Codex",
-  { weekly: { rem: 55, reset: 336960, win: 604800 }, spark: null, resets: null }, T0, 5);
+  { weekly: { rem: 55, reset: 336960, win: 604800 }, resets: null }, T0, 5);
 eq("on-pace copy", wtOn.includes("Pace: on track ("), true);
 eq("no resets line when null", wtOn.includes("↺"), false);
 eq("no spark line when null", wtOn.includes("⚡"), false);
@@ -272,50 +265,11 @@ eq("no spark line when null", wtOn.includes("⚡"), false);
 const gw1 = L.nextTooltipWeekly(null, "Codex", WD, T0, 5);
 eq("weekly gate first render commits", gw1 !== null, true);
 eq("weekly gate tooltip matches builder", gw1.tooltip, wt);
-// one tick later: rem drifts 1, reset −60s -> frozen
-eq("weekly 1% drift no rewrite", L.nextTooltipWeekly(gw1.snap, "Codex",
-  { ...WD, weekly: { rem: 77, reset: 508449, win: 604800 } }, T0 + 62000, 5), null);
-// 5-point drift -> rewrite
-eq("weekly 5% drift rewrites", L.nextTooltipWeekly(gw1.snap, "Codex",
-  { ...WD, weekly: { rem: 73, reset: 508000, win: 604800 } }, T0 + 300000, 5) !== null, true);
-// pace verdict flip is material even under drift threshold: rem 78→80 crosses δ −6→−4 (hot→on)
-eq("verdict flip rewrites", L.nextTooltipWeekly(gw1.snap, "Codex",
-  { ...WD, weekly: { rem: 80, reset: 508511, win: 604800 } }, T0, 5) !== null, true);
-// credits change is material
+eq("identical weekly data does not rewrite", L.nextTooltipWeekly(gw1.snap, "Codex", WD, T0, 5), null);
+eq("weekly rem change rewrites", L.nextTooltipWeekly(gw1.snap, "Codex",
+  { ...WD, weekly: { rem: 77, reset: 508511, win: 604800 } }, T0, 5) !== null, true);
 eq("credits change rewrites", L.nextTooltipWeekly(gw1.snap, "Codex",
   { ...WD, resets: 3 }, T0, 5) !== null, true);
-const gwExp = L.nextTooltipWeekly(null, "Codex", { ...WD, resetsExpiry: exp }, T0, 5);
-eq("expiry same-day tick frozen", L.nextTooltipWeekly(gwExp.snap, "Codex",
-  { ...WD, resetsExpiry: exp }, T0 + 60000, 5), null);
-eq("expiry daily tick rewrites", L.nextTooltipWeekly(gwExp.snap, "Codex",
-  { ...WD, resetsExpiry: exp }, T0 + 86400000, 5) !== null, true);
-// spark disappearing is material
-eq("spark vanish rewrites", L.nextTooltipWeekly(gw1.snap, "Codex",
-  { ...WD, spark: null }, T0, 5) !== null, true);
-// an untouched spark limit slides its reset epoch forward every fetch
-// (reset_after_seconds pinned at the full window). That slide must NOT be
-// material — minute-level tracking would rewrite (and kill the hover) every
-// ~2 minutes all week long.
-eq("sliding spark epoch does not rewrite", L.nextTooltipWeekly(gw1.snap, "Codex",
-  { ...WD, weekly: { rem: 78, reset: 508511 - 120, win: 604800 } }, T0 + 120000, 5), null);
-// a genuine spark window rollover (hours-scale jump) is still material
-const gwR = L.nextTooltipWeekly(null, "Codex",
-  { ...WD, spark: { name: "GPT-5.3-Codex-Spark", rem: 40, reset: 3600 } }, T0, 5);
-eq("spark rollover rewrites", L.nextTooltipWeekly(gwR.snap, "Codex",
-  { ...WD, spark: { name: "GPT-5.3-Codex-Spark", rem: 40, reset: 604800 } }, T0 + 60000, 5) !== null, true);
-// verdict-boundary graze: line 84.00 (reset 508032), rem wobbling 79↔78 flips
-// δ across −5/−6 every tick. Without hysteresis every flip rewrites and an open
-// hover dies each refresh; the flip must only be material once it clears the
-// boundary by a full point.
-const gB = L.nextTooltipWeekly(null, "Codex",
-  { weekly: { rem: 79, reset: 508032, win: 604800 }, spark: null, resets: null }, T0, 5);
-eq("boundary graze on->hot frozen", L.nextTooltipWeekly(gB.snap, "Codex",
-  { weekly: { rem: 78, reset: 508032 - 60, win: 604800 }, spark: null, resets: null }, T0 + 60000, 5), null);
-eq("boundary graze back to on frozen", L.nextTooltipWeekly(gB.snap, "Codex",
-  { weekly: { rem: 79, reset: 508032 - 120, win: 604800 }, spark: null, resets: null }, T0 + 120000, 5), null);
-// clearly past the boundary (δ −6.5 < −(tol+1)) -> the flip commits
-eq("clear crossing rewrites", L.nextTooltipWeekly(gB.snap, "Codex",
-  { weekly: { rem: 77, reset: 505008, win: 604800 }, spark: null, resets: null }, T0 + 300000, 5) !== null, true);
 // error flip both ways, frozen while persisting
 const gwE = L.nextTooltipWeekly(gw1.snap, "Codex", { error: "no Codex credentials found" }, T0, 5);
 eq("weekly error rewrites", gwE !== null, true);

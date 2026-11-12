@@ -2,10 +2,12 @@
 // probe with the NEW token. Fully isolated: temp HOME (file-source creds, no keychain),
 // and https fully mocked (no network). Asserts the stale token is replaced everywhere.
 const fs = require("fs");
+const os = require("os");
 const path = require("path");
 
-const HOME = "/tmp/uqb_fakehome";
+const HOME = path.join(os.tmpdir(), "uqb_fakehome");
 process.env.HOME = HOME;
+process.env.USERPROFILE = HOME;
 fs.rmSync(HOME, { recursive: true, force: true });
 fs.mkdirSync(path.join(HOME, ".claude"), { recursive: true });
 const credPath = path.join(HOME, ".claude", ".credentials.json");

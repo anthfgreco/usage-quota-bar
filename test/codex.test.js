@@ -2,10 +2,12 @@
 // payload; fetchCodex must parse the new shape and renderCodex must produce the
 // always-on segment. Also guards the legacy two-window fallback.
 const fs = require("fs");
+const os = require("os");
 const path = require("path");
 
-const HOME = "/tmp/uqb_fakehome_codex";
+const HOME = path.join(os.tmpdir(), "uqb_fakehome_codex");
 process.env.HOME = HOME;
+process.env.USERPROFILE = HOME;
 fs.rmSync(HOME, { recursive: true, force: true });
 fs.mkdirSync(path.join(HOME, ".codex"), { recursive: true });
 fs.writeFileSync(path.join(HOME, ".codex", "auth.json"),
@@ -88,16 +90,16 @@ const I = ext._internal;
     ["credits endpoint hit once", seen.creditsRequests === 1],
     ["same-count credits lookup cached", again === d.resetsExpiry && seen.creditsRequests === 1],
     ["weekly shape parsed", !d.error && d.weekly && d.weekly.rem === 78],
-    ["spark parsed", d.spark && d.spark.rem === 100],
     ["resets parsed", d.resets === 4],
     ["credits expiry fetched", d.resetsExpiry === Date.parse("2026-07-18T00:33:46.788614Z")],
-    ["bar text (hot, credits after glyph, no calendar)", item.text === "🟢 Codex  78% (5d) 🔥4"],
+    ["bar text (hot with signed delta, separated credits)", item.text === "🟢 Codex  78% (5d) 🔥−6 ↺4"],
     ["item color green", item.color && item.color.id === "charts.green"],
     ["tooltip committed", typeof item.tooltip === "string" && item.tooltip.startsWith("Codex\n")],
-    ["tooltip pace line", item.tooltip.includes("🔥 Pace: −6 vs even burn (on-pace 84%)")],
+    ["tooltip pace line", item.tooltip.includes("🔥 Pace: -6% · target 84% remaining now")],
+    ["tooltip budget line", item.tooltip.includes("Budget:")],
     ["tooltip resets line", item.tooltip.includes("↺ Rate-limit resets available: 4")],
     ["tooltip nearest expiry", item.tooltip.includes("nearest expires")],
-    ["tooltip spark line", item.tooltip.includes("⚡ Spark: 100% left")],
+    ["no spark line in tooltip", !item.tooltip.includes("⚡")],
   ];
 
   // legacy two-window shape still renders through the old reveal-gated path
